@@ -1,0 +1,207 @@
+[
+  {
+    "file": ".gitattributes",
+    "bytes": 24,
+    "sha256": "e83782708b8eb34afaac7d5156345fbd81dc013025c6a6d55708868446f3aa5e"
+  },
+  {
+    "file": ".gitignore",
+    "bytes": 161,
+    "sha256": "5cd7b72e25dbbdcac2bc5c08f59a79521a5c53fd0bf7120531b36ffd486e2dd7"
+  },
+  {
+    "file": "CHANGELOG.md",
+    "bytes": 876,
+    "sha256": "56a2aa8f3ad2b7a8a609117a7966a5c7bb900e56633579cb43b4f8bc27883e9b"
+  },
+  {
+    "file": "config.json",
+    "bytes": 718,
+    "sha256": "b69231d20eafc9c1d7879c9103c06f29bd3f5e7ca88b909c3d9948236aaaf895"
+  },
+  {
+    "file": "excel_builder.mjs",
+    "bytes": 9669,
+    "sha256": "27afd29cab5774550024a9823e6d380dacecd9dea14f6ae456f9963a2ed62077"
+  },
+  {
+    "file": "LICENSE",
+    "bytes": 1092,
+    "sha256": "7de37b291fad0aad4f74e597a0480dc2eb34bcf44436af0cccd27035f6cd0628"
+  },
+  {
+    "file": "README.md",
+    "bytes": 9245,
+    "sha256": "3434cdcc3797b0553c488cd8ee2f242214e8f917f3656858128e61e4d69235bf"
+  },
+  {
+    "file": "requirements.lock",
+    "bytes": 173,
+    "sha256": "de47b21b70eb542b4d4e60aba322f45cc3814a205c1d117744f1115155b1a6cb"
+  },
+  {
+    "file": "runtime-versions.json",
+    "bytes": 257,
+    "sha256": "595ff1b5cb9e3da3f69f96a79eeace3f1c8b0d4d477d11cad7cf8ee88e5434ae"
+  },
+  {
+    "file": "setup.ps1",
+    "bytes": 920,
+    "sha256": "90877bf8bb304f4670b539c74b4c692ca37e6c914aeb3008dd756beabe021b4f"
+  },
+  {
+    "file": "start-local.ps1",
+    "bytes": 1091,
+    "sha256": "8ca7c72e5181ee9ec851eb3bbb4471fccb51e01b2519afe2afd9afbef021381b"
+  },
+  {
+    "file": "验证报告.md",
+    "bytes": 7026,
+    "sha256": "ca1a99d81f65b557238925d8166c77fa0d0d2b9e8e390a923f06f6a65fb6d0c9"
+  },
+  {
+    "file": "docs/schema.sql",
+    "bytes": 1447,
+    "sha256": "a5bc9695fd04680774cb37f754689590b3174cef55ee00d946ac26a272dde4e3"
+  },
+  {
+    "file": "docs/原始需求.md",
+    "bytes": 16270,
+    "sha256": "8961f23472a8d0ff4f30bb9edb8f3506f7c416c77031f402c17ffa998a400a04"
+  },
+  {
+    "file": "evidence/artifact-verification.json",
+    "bytes": 3458,
+    "sha256": "cffac3f64052fb63cb80fbcf56c2e6738da30fbe95b426e1f12f9c0090c936eb"
+  },
+  {
+    "file": "evidence/database-audit.json",
+    "bytes": 3612,
+    "sha256": "6e76124abc2daec35566aff7d348021d80654d313fab190c32b84d6696dd42e3"
+  },
+  {
+    "file": "evidence/excel-verification.json",
+    "bytes": 1196,
+    "sha256": "52658810554654f8250e3f4d48f4fbff598fe68d85c1d841d5503628fc30e993"
+  },
+  {
+    "file": "evidence/file-lock-test.json",
+    "bytes": 181,
+    "sha256": "a73a0a98c11c8dfe7543b7530c4035ab68f44808504db099ee08ac263c2441f0"
+  },
+  {
+    "file": "evidence/live-health.json",
+    "bytes": 1760,
+    "sha256": "ea3ed853e8e99e25f562acd19286a894bafe6dbcb8764ff41f8cc2714abcbe8c"
+  },
+  {
+    "file": "evidence/load-result.json",
+    "bytes": 183,
+    "sha256": "6180279120df73e853de7a23721748e519b2c4d33ab2001b4bfbb355c3b2945f"
+  },
+  {
+    "file": "evidence/mcp-btc-reference.json",
+    "bytes": 832,
+    "sha256": "06d2a5a0e494375a36086e59e5f028842b48eaf66d2a586add21613cdad6e375"
+  },
+  {
+    "file": "evidence/unit-test-results.txt",
+    "bytes": 3279,
+    "sha256": "0a4a0ffb3b662bff453a36550bc041559139a6697df13c9009a92a1e42415082"
+  },
+  {
+    "file": "evidence/ws-smoke.json",
+    "bytes": 192,
+    "sha256": "5a210f838ed785c1a599bbeb3ce25d929d65630e0c28eea69ba2f4bdebd6e52f"
+  },
+  {
+    "file": "evidence/交付状态.json",
+    "bytes": 2343,
+    "sha256": "8b5bfec44c68776f881ad7806ae4768373225f9738cb68f406c898bbc2f763da"
+  },
+  {
+    "file": "evidence/提醒样例.json",
+    "bytes": 1453,
+    "sha256": "756d2a0a1b5a2d6e598164f703a37180769bcf2f847089fd4e51a079c66208db"
+  },
+  {
+    "file": "excel/导出清单.json",
+    "bytes": 810,
+    "sha256": "0c4e443d02fef81b0435999280b8fad696fd0d42b19ec9d9f58f2288040e93ba"
+  },
+  {
+    "file": "excel/币安USDT合约监控_15分钟.xlsx",
+    "bytes": 224603,
+    "sha256": "dcf50bafacf6cdec7671b1016fbaf528e4b309f8a022dd124bb77517848b0694"
+  },
+  {
+    "file": "excel/币安USDT合约监控_1小时.xlsx",
+    "bytes": 229678,
+    "sha256": "916aaa3c742f5d304b8c5e0c2798be6b1d10dddbfd9b2c7744e6720dd4f448c8"
+  },
+  {
+    "file": "excel/币安USDT合约监控_4小时.xlsx",
+    "bytes": 217996,
+    "sha256": "26bb6cda65100c8c46247f278dcea31a5cca5eb889c53d688ce63ded9cf6dae2"
+  },
+  {
+    "file": "excel/币安USDT合约监控_日线.xlsx",
+    "bytes": 213326,
+    "sha256": "65a7e0c469c7562f610ea0acd96b1e074c7e16fdc4a3faa351e1b28a3952d19e"
+  },
+  {
+    "file": "monitor/core.py",
+    "bytes": 15468,
+    "sha256": "9af0c4ccdb8d2c886befe0700a3a82c9d68c87d34ebe11dac04b9e2604673100"
+  },
+  {
+    "file": "monitor/export.py",
+    "bytes": 10421,
+    "sha256": "eaa78c5b8ec4b95104401eaa304848815cdc80f84fd82ae3ccd5f55137419151"
+  },
+  {
+    "file": "monitor/notifications.py",
+    "bytes": 5599,
+    "sha256": "3e217de865fce1b52e69025b5e967c3e61dd7614232b3265983ac47626f1f07b"
+  },
+  {
+    "file": "monitor/service.py",
+    "bytes": 15218,
+    "sha256": "fadfbb9236bc1c280d8926cfaf2831c88bf2ac337a9204c472d70eabeebb86c0"
+  },
+  {
+    "file": "monitor/transport.py",
+    "bytes": 7239,
+    "sha256": "db64bfde2f2b3a549cfc73c07d3c7125b8ea2fcb384082ca860bd7e7435393b4"
+  },
+  {
+    "file": "monitor/__init__.py",
+    "bytes": 97,
+    "sha256": "6391c8c256e03851d63359447d32eea54e70f06197fbf2cdb79d817030581abb"
+  },
+  {
+    "file": "monitor/__main__.py",
+    "bytes": 1675,
+    "sha256": "4b3e271b12c43eda3c2953eb36fbcf126a6c863d5928085ae0ac514dc50d5805"
+  },
+  {
+    "file": "tests/load_test.py",
+    "bytes": 1181,
+    "sha256": "218aef1ff0266efba3d0f2aeb64f3e0b96ee39d05a0ab6d64d724f41e82e4510"
+  },
+  {
+    "file": "tests/test_monitor.py",
+    "bytes": 11520,
+    "sha256": "1ee9de86aab49554372e3c07a7669974e4b355a12b89fb69cb972f11d068751f"
+  },
+  {
+    "file": "tests/test_service.py",
+    "bytes": 4911,
+    "sha256": "f5dbdcde68c57753d772ff3dfa4b00ef84d96afae80d65166722f6b5cf146aa7"
+  },
+  {
+    "file": "tests/verify_excel.py",
+    "bytes": 4208,
+    "sha256": "98d93d607e8d29a37d596556216feff11cbbae4494a2b935a4c64519db0d3153"
+  }
+]

@@ -1,0 +1,38 @@
+test_config_version_changes (test_monitor.CoreTests.test_config_version_changes) ... ok
+test_daily_boundary_beijing (test_monitor.CoreTests.test_daily_boundary_beijing) ... ok
+test_duplicate_and_out_of_order (test_monitor.CoreTests.test_duplicate_and_out_of_order) ... ok
+test_ema_against_decimal_reference (test_monitor.CoreTests.test_ema_against_decimal_reference) ... ok
+test_empty_refresh_keeps_universe (test_monitor.CoreTests.test_empty_refresh_keeps_universe) ... ok
+test_expiry_strict_boundary (test_monitor.CoreTests.test_expiry_strict_boundary) ... ok
+test_export_four_periods_and_unready (test_monitor.CoreTests.test_export_four_periods_and_unready) ... ok
+test_export_interruption_keeps_previous_file (test_monitor.CoreTests.test_export_interruption_keeps_previous_file) ... ok
+test_gap_atomic_state (test_monitor.CoreTests.test_gap_atomic_state) ... ok
+test_historical_no_outbox (test_monitor.CoreTests.test_historical_no_outbox) ... ok
+test_interface_allowlist (test_monitor.CoreTests.test_interface_allowlist) ... ok
+test_invalid_ohlc_and_nonfinite (test_monitor.CoreTests.test_invalid_ohlc_and_nonfinite) ... ok
+test_locked_excel_preserves_old (test_monitor.CoreTests.test_locked_excel_preserves_old) ... ok
+test_no_cooldown_distinct_bar (test_monitor.CoreTests.test_no_cooldown_distinct_bar) ... ok
+test_notification_failure_isolated (test_monitor.CoreTests.test_notification_failure_isolated) ... ok
+test_partition_no_loss (test_monitor.CoreTests.test_partition_no_loss) ... ok
+test_periods_independent (test_monitor.CoreTests.test_periods_independent) ... ok
+test_readiness_199_200_1500 (test_monitor.CoreTests.test_readiness_199_200_1500) ... ok
+test_removal_prevents_signals (test_monitor.CoreTests.test_removal_prevents_signals) ... ok
+test_restart_signal_idempotency (test_monitor.CoreTests.test_restart_signal_idempotency) ... ok
+test_shape_boundary (test_monitor.CoreTests.test_shape_boundary) ... ok
+test_strict_ema_equality (test_monitor.CoreTests.test_strict_ema_equality) ... ok
+test_unclosed_cannot_ingest (test_monitor.CoreTests.test_unclosed_cannot_ingest) ... ok
+test_universe_filter_and_dynamic_remove (test_monitor.CoreTests.test_universe_filter_and_dynamic_remove) ... ok
+test_volume_boundary_and_max (test_monitor.CoreTests.test_volume_boundary_and_max) ... ok
+test_window_excludes_target (test_monitor.CoreTests.test_window_excludes_target) ... ok
+test_zero_denominator (test_monitor.CoreTests.test_zero_denominator) ... ok
+test_gap_repair_paginated_and_seed_preserved (test_service.ServiceTests.test_gap_repair_paginated_and_seed_preserved) ... ok
+test_incomplete_source_retained_without_signals (test_service.ServiceTests.test_incomplete_source_retained_without_signals) ... ok
+test_notification_retry_skips_delivered_adapter (test_service.ServiceTests.test_notification_retry_skips_delivered_adapter) ... ok
+test_repair_queue_coalesces (test_service.ServiceTests.test_repair_queue_coalesces) ... ok
+test_shutdown_waits_for_export (test_service.ServiceTests.test_shutdown_waits_for_export) ... ok
+test_slow_processing_marks_expired (test_service.ServiceTests.test_slow_processing_marks_expired) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 2.509s
+
+OK

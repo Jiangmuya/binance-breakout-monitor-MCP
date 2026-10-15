@@ -1,0 +1,15 @@
+runtime/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.env
+.env.*
+!.env.example
+*.sqlite3*
+*.db
+*.log
+*.pending.xlsx
+*_snapshot_*.xlsx
+*.zip

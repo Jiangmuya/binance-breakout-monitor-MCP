@@ -1,0 +1,8 @@
+{
+  "python": "3.12.14",
+  "node": "24.19.0",
+  "artifact_tool": "2.8.94",
+  "artifact_tool_distribution": "Codex bundled private runtime; not included in source archive",
+  "python_dependencies": "requirements.lock",
+  "platform_verified": "Windows x64"
+}

@@ -1,0 +1,179 @@
+{
+  "integrity": "ok",
+  "bars": 3578824,
+  "symbols": 749,
+  "states": 2996,
+  "evaluations": 45327,
+  "signals_by_type": [
+    {
+      "interval": "15m",
+      "event_type": "EXPIRED",
+      "count": 8
+    },
+    {
+      "interval": "1d",
+      "event_type": "HISTORICAL",
+      "count": 1
+    },
+    {
+      "interval": "1h",
+      "event_type": "EXPIRED",
+      "count": 5
+    },
+    {
+      "interval": "1h",
+      "event_type": "HISTORICAL",
+      "count": 3
+    },
+    {
+      "interval": "1h",
+      "event_type": "REALTIME",
+      "count": 1
+    },
+    {
+      "interval": "4h",
+      "event_type": "EXPIRED",
+      "count": 4
+    }
+  ],
+  "notifications": [
+    {
+      "status": "SENT",
+      "count": 1
+    }
+  ],
+  "ema_checks": [
+    {
+      "symbol": "BTCUSDT",
+      "interval": "15m",
+      "count": 1542,
+      "absolute_errors": [
+        1.4551915228366852e-11,
+        7.275957614183426e-11,
+        3.4924596548080444e-10
+      ]
+    },
+    {
+      "symbol": "BTCUSDT",
+      "interval": "1h",
+      "count": 1511,
+      "absolute_errors": [
+        0.0,
+        8.731149137020111e-11,
+        3.346940502524376e-10
+      ]
+    },
+    {
+      "symbol": "BTCUSDT",
+      "interval": "4h",
+      "count": 1503,
+      "absolute_errors": [
+        1.4551915228366852e-11,
+        4.3655745685100555e-11,
+        3.055902197957039e-10
+      ]
+    },
+    {
+      "symbol": "BTCUSDT",
+      "interval": "1d",
+      "count": 1501,
+      "absolute_errors": [
+        1.4551915228366852e-11,
+        4.3655745685100555e-11,
+        3.4924596548080444e-10
+      ]
+    },
+    {
+      "symbol": "WALUSDT",
+      "interval": "15m",
+      "count": 1541,
+      "absolute_errors": [
+        0.0,
+        3.469446951953614e-17,
+        2.220446049250313e-16
+      ]
+    },
+    {
+      "symbol": "WALUSDT",
+      "interval": "1h",
+      "count": 1511,
+      "absolute_errors": [
+        6.938893903907228e-18,
+        6.938893903907228e-18,
+        1.3877787807814457e-16
+      ]
+    },
+    {
+      "symbol": "WALUSDT",
+      "interval": "4h",
+      "count": 1503,
+      "absolute_errors": [
+        0.0,
+        4.163336342344337e-17,
+        1.5959455978986625e-16
+      ]
+    },
+    {
+      "symbol": "WALUSDT",
+      "interval": "1d",
+      "count": 567,
+      "absolute_errors": [
+        0.0,
+        2.0816681711721685e-17,
+        4.996003610813204e-16
+      ]
+    },
+    {
+      "symbol": "WUSDT",
+      "interval": "15m",
+      "count": 1541,
+      "absolute_errors": [
+        0.0,
+        6.938893903907228e-18,
+        8.673617379884035e-17
+      ]
+    },
+    {
+      "symbol": "WUSDT",
+      "interval": "1h",
+      "count": 1511,
+      "absolute_errors": [
+        0.0,
+        1.0408340855860843e-17,
+        9.71445146547012e-17
+      ]
+    },
+    {
+      "symbol": "WUSDT",
+      "interval": "4h",
+      "count": 1503,
+      "absolute_errors": [
+        3.469446951953614e-18,
+        1.0408340855860843e-17,
+        4.5102810375396984e-17
+      ]
+    },
+    {
+      "symbol": "WUSDT",
+      "interval": "1d",
+      "count": 925,
+      "absolute_errors": [
+        3.469446951953614e-18,
+        5.204170427930421e-18,
+        1.457167719820518e-16
+      ]
+    }
+  ],
+  "mcp_comparisons": [
+    {
+      "open_time": 1792015200000,
+      "OHLCV_quote_match": true
+    },
+    {
+      "open_time": 1792018800000,
+      "OHLCV_quote_match": true
+    }
+  ],
+  "continuous_pairs_verified": 2996,
+  "signal_audits": 22
+}

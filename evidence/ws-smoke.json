@@ -1,0 +1,9 @@
+{
+  "url": "wss://fstream.binance.com/market/stream",
+  "duration_seconds": 20,
+  "ack": true,
+  "messages": 62,
+  "closed": 0,
+  "unclosed": 62,
+  "latest_event_time": 1791988792426
+}
