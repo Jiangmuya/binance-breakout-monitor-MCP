@@ -70,6 +70,7 @@ class Monitor:
         self.completed=0
         self.failed=0
         self.client=None
+        self.console_stage='初始化 / 恢复历史数据'
 
     def repair(self,symbol,interval):
         pair=(symbol,interval)
@@ -200,6 +201,7 @@ class Monitor:
                         self.repair(symbol,interval)
 
     async def health(self):
+        next_console=0.
         while not self.stop.is_set():
             report=await asyncio.to_thread(health_snapshot,self.store)
             report.update(pid=os.getpid(),running=True,market_queue=self.queue.qsize(),repair_queue=self.repairs.qsize(),
@@ -208,6 +210,14 @@ class Monitor:
                           history_batches=self.completed,history_failures=self.failed)
             target=Path(self.config['data_dir'])/'health.json'
             temp=target.with_suffix('.tmp');temp.write_text(dumps(report),encoding='utf-8');os.replace(temp,target)
+            if time.monotonic()>=next_console:
+                receiving=sum(status=='RECEIVING' for status in self.client.connections.values())
+                errors=sum(p['ERROR'] for p in report['periods'].values())
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {self.console_stage}；"
+                      f"交易对 {report['universe']}；行情连接 {receiving}/{len(self.client.connections)}；"
+                      f"补数批次 {self.completed}；历史请求失败 {self.failed}；数据错误 {errors}；"
+                      f"累计信号 {report['signals']}。",flush=True)
+                next_console=time.monotonic()+60
             if (Path(self.config['data_dir'])/'STOP').exists(): self.stop.set()
             await asyncio.sleep(5)
 
@@ -215,13 +225,21 @@ class Monitor:
         async with PublicClient(self.config) as client:
             self.client=client
             health_task=asyncio.create_task(self.health())
+            export_task=None
             try:
+                if mode=='run':
+                    from .export import export_loop
+                    # Publish the startup snapshot immediately, including during recovery.
+                    export_task=asyncio.create_task(export_loop(self))
                 await self.bootstrap()
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 历史检查完成；"
+                      f"本次补数 {self.completed} 批，失败 {self.failed} 批。",flush=True)
                 if mode=='bootstrap': return
                 from .notifications import dispatch
-                from .export import export_loop
                 await self.subscribe()
-                export_task=asyncio.create_task(export_loop(self))
+                self.console_stage='持续监控中'
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 已启动 {len(self.ws_tasks)} 条行情订阅连接；"
+                      "等待已收盘K线。触发条件满足时会输出提醒，Excel按各周期收盘刷新。",flush=True)
                 tasks=[asyncio.create_task(self.maintenance()),
                        asyncio.create_task(dispatch(self))]
                 tasks += [asyncio.create_task(self.consume()) for _ in range(8)]
@@ -241,6 +259,8 @@ class Monitor:
             finally:
                 self.stop.set();health_task.cancel()
                 await asyncio.gather(health_task,return_exceptions=True)
+                if export_task is not None:
+                    await export_task
                 await asyncio.to_thread(self.store.meta,'last_stopped',now_ms())
                 target=Path(self.config['data_dir'])/'health.json'
                 report=await asyncio.to_thread(health_snapshot,self.store)

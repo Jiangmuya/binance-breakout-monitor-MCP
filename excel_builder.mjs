@@ -19,6 +19,7 @@ const emas=[c('EMA12','EMA12','price'),c('EMA50','EMA50','price'),c('EMA200','EM
 const checks=Array.from({length:6},(_,i)=>c(`check${i+1}`,['阳线突破','EMA条件','放量','实体扩张','涨幅扩张','阳线形态'][i],'bool',14));
 const prices=['o','h','l','c'].map((k,i)=>c(k,['开盘价','最高价','最低价','收盘价'][i],'price'));
 const dates=[c('t','开盘时间 北京','date',29),c('close_boundary','收盘边界 北京','date',29),c('t','开盘UTC毫秒','integer',22),c('T','API收盘UTC毫秒','integer',22)];
+const triggerDates=dates.map(x=>x.key==='close_boundary'?{...x,label:'触发K线收盘时间 北京',width:32}:x);
 const comparisons=[
  c('V20_mean','前20均量'),c('V20_median','前20中位量'),c('V20_max','前20最大量'),c('volume_ratio','量比'),
  c('body','有符号实体','price'),c('abs_body','绝对实体','price'),c('relative_body','相对实体','rate'),
@@ -39,14 +40,14 @@ const schemas={
   c('health','数据状态','text',22),c('stale','快照存在缺口','bool',20),c('updated','最后更新 北京','date',29),
   c('seed','EMA种子UTC毫秒','integer',22),c('t','开盘UTC毫秒','integer',22),c('T','API收盘UTC毫秒','integer',22),
   c('strategy_version','策略版本','text',27),c('detail','状态说明','text',55)],
- triggers:[c('signal_id','signal_id','text',68),c('strategy_version','策略版本','text',27),...identity,c('interval','周期','text'),...dates,
+ triggers:[...identity,c('interval','周期','text'),...triggerDates,
   ...prices,c('v','基础币成交量'),c('q','USDT成交额'),...emas,...comparisons,...checks,
   c('event_type','事件类型','text',20),c('origin','数据来源阶段','text',20),c('readiness','预热状态','text',24),
-  c('seed','EMA种子UTC毫秒','integer',22),c('warmup','累计K线数','integer'),c('discovered','发现时间 北京','date',29),
+  c('seed','EMA种子UTC毫秒','integer',22),c('warmup','累计K线数','integer'),c('discovered','触发发现时间 北京','date',29),
   c('discovered','发现UTC毫秒','integer',22),c('received','接收UTC毫秒','integer',22),c('processed','处理UTC毫秒','integer',22),c('event_time','交易所事件UTC毫秒','integer',24),
   c('notification_status','通知状态','text',24),c('sent','发送时间 北京','date',29),c('sent','发送UTC毫秒','integer',22),
   c('latency_ms','发现延迟毫秒','integer',20),c('sending_latency_ms','发送延迟毫秒','integer',20),c('attempts','通知尝试次数','integer'),
-  c('thresholds','阈值JSON','text',70)],
+  c('thresholds','阈值JSON','text',70),c('signal_id','signal_id','text',68),c('strategy_version','策略版本','text',27)],
  previous:[c('signal_id','signal_id','text',68),c('symbol','交易对','text',20),c('interval','周期','text'),c('index','前20序号','integer'),
   ...dates,...prices,c('v','基础币成交量'),c('q','USDT成交额'),c('abs_body','绝对实体','price'),c('relative_body','相对实体','rate'),
   c('bar_return','开收盘涨幅','rate'),c('close_return','相对前收盘涨幅','rate')],
@@ -54,11 +55,14 @@ const schemas={
  parameters:[c('key','参数或口径','text',30),c('value','说明或值','text',125)]
 };
 const names={overview:'监控概览',triggers:'触发记录',previous:'前20根对照',status:'数据状态与异常',parameters:'参数与说明'};
+const sheetOrder=['triggers','overview','previous','status','parameters'];
 const clean=v=>typeof v==='string'&&/^[=+@]/.test(v)?"'"+v:v;
 const verification=[];
 for(const book of spec.books){
  const wb=Workbook.create();
- for(const [key,columns] of Object.entries(schemas)){
+ // The first added worksheet is also the workbook's default opening sheet.
+ for(const key of sheetOrder){
+  const columns=schemas[key];
   const rows=book[key],s=wb.worksheets.add(names[key]);
   const n=Math.max(rows.length,1),last=6+n;
   s.showGridLines=false;
@@ -69,9 +73,17 @@ for(const book of spec.books){
   s.getRange('A1').format.font={name:'Microsoft YaHei',size:17,bold:true,color:'#15344F'};
   s.getRange('A1').format.rowHeight=34;
   s.getRange('A2').values=[['只读监控；真实行情快照。条件触发不代表实际交易。']];
-  s.getRange('A3').values=[['生成时间（北京时间）']];s.getRange('B3').values=[[serial(book.generated)]];
+  s.getRange('A3').values=[['快照时间 北京']];s.getRange('B3').values=[[serial(book.generated)]];
   s.getRange('B3').setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  s.getRange('A4').values=[[rows.length?`本表记录 ${rows.length} 条；数值来自持久化数据库。`:'本次无记录；未填入任何模拟信号。']];
+  const recordSummary=rows.length?`本表记录 ${rows.length} 条；数值来自持久化数据库。`:'本次无记录；未填入任何模拟信号。';
+  const coverage=book.coverage;
+  const coverageSummary=coverage?`目标收盘数据 ${coverage.completed}/${coverage.expected} 个交易对${coverage.missing.length?`，尚缺 ${coverage.missing.length} 个`:''}。`:'';
+  s.getRange('A4').values=[[`${recordSummary}${coverageSummary}`]];
+  if(book.refresh_reason){
+   const reason={STARTUP:'启动快照（历史恢复中）',CANDLE_CLOSE:'收盘刷新',MANUAL:'手动刷新'}[book.refresh_reason]||book.refresh_reason;
+   const boundary=book.refresh_boundary==null?'':`，对应收盘时间 ${new Date(book.refresh_boundary+28800000).toISOString().slice(0,19).replace('T',' ')}（北京时间）`;
+   s.getRange('A5').values=[[`${reason}${boundary}`]];
+  }
   s.getRangeByIndexes(5,0,1,columns.length).values=[columns.map(x=>x.label)];
   const header=s.getRangeByIndexes(5,0,1,columns.length);
   header.format.fill='#15344F';header.format.font={name:'Microsoft YaHei',bold:true,color:'#FFFFFF',size:10};
@@ -97,6 +109,7 @@ for(const book of spec.books){
   if(key==='status')s.getRangeByIndexes(6,0,n,columns.length).format.rowHeight=40;
   const table=s.tables.add(`A6:${col(columns.length-1)}${last}`,true,`T_${key}`);
   table.showFilterButton=true;
+  s.getRangeByIndexes(5,0,n+1,columns.length).format.borders={preset:'all',style:'thin',color:'#B7C5D3'};
   s.freezePanes.freezeRows(6);s.freezePanes.freezeColumns(key==='parameters'?1:2);
  }
  wb.recalculate();

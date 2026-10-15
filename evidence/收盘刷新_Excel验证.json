@@ -1,0 +1,62 @@
+[
+  {
+    "file": "币安USDT合约监控_15分钟.xlsx",
+    "interval": "15m",
+    "overview_rows": 749,
+    "signals": 19,
+    "comparison_rows": 380,
+    "numeric_values_checked": 2996,
+    "xlsx_reopened": true,
+    "styles_filters_freeze": true,
+    "first_active_sheet": "触发记录",
+    "trigger_column_order_verified": true,
+    "trigger_dates_checked": 57,
+    "all_borders_cells_checked": 39648,
+    "macros_external_links": false
+  },
+  {
+    "file": "币安USDT合约监控_1小时.xlsx",
+    "interval": "1h",
+    "overview_rows": 749,
+    "signals": 12,
+    "comparison_rows": 240,
+    "numeric_values_checked": 2996,
+    "xlsx_reopened": true,
+    "styles_filters_freeze": true,
+    "first_active_sheet": "触发记录",
+    "trigger_column_order_verified": true,
+    "trigger_dates_checked": 36,
+    "all_borders_cells_checked": 36567,
+    "macros_external_links": false
+  },
+  {
+    "file": "币安USDT合约监控_4小时.xlsx",
+    "interval": "4h",
+    "overview_rows": 749,
+    "signals": 4,
+    "comparison_rows": 80,
+    "numeric_values_checked": 2996,
+    "xlsx_reopened": true,
+    "styles_filters_freeze": true,
+    "first_active_sheet": "触发记录",
+    "trigger_column_order_verified": true,
+    "trigger_dates_checked": 12,
+    "all_borders_cells_checked": 33087,
+    "macros_external_links": false
+  },
+  {
+    "file": "币安USDT合约监控_日线.xlsx",
+    "interval": "1d",
+    "overview_rows": 749,
+    "signals": 1,
+    "comparison_rows": 20,
+    "numeric_values_checked": 2996,
+    "xlsx_reopened": true,
+    "styles_filters_freeze": true,
+    "first_active_sheet": "触发记录",
+    "trigger_column_order_verified": true,
+    "trigger_dates_checked": 3,
+    "all_borders_cells_checked": 31782,
+    "macros_external_links": false
+  }
+]
