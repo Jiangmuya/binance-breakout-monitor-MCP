@@ -1,4 +1,4 @@
-param([string]$PythonPath = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe")
+﻿param([string]$PythonPath = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe")
 $ErrorActionPreference = 'Stop'
 if (!(Test-Path -LiteralPath $PythonPath)) { throw '请指定 Python 3.12 路径。' }
 $taskTempPath = Join-Path $PSScriptRoot 'runtime\setup-tmp'

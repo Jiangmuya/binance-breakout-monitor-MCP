@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('init','bootstrap','run','export','status','stop')][string]$Command = 'run',
     [int]$Seconds = 0,
     [string]$PythonPath = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe",

@@ -11,8 +11,8 @@
   },
   {
     "file": "CHANGELOG.md",
-    "bytes": 876,
-    "sha256": "56a2aa8f3ad2b7a8a609117a7966a5c7bb900e56633579cb43b4f8bc27883e9b"
+    "bytes": 1162,
+    "sha256": "c4676fe2d650c32924adb4ae5a09fb5ceb1481bd6af3d5f3f0f13511288ebd6e"
   },
   {
     "file": "config.json",
@@ -31,8 +31,8 @@
   },
   {
     "file": "README.md",
-    "bytes": 9245,
-    "sha256": "3434cdcc3797b0553c488cd8ee2f242214e8f917f3656858128e61e4d69235bf"
+    "bytes": 9424,
+    "sha256": "0b9e7128ee22f22eb1950490a5c6e21173401c7916f8683ebd21573be27d9678"
   },
   {
     "file": "requirements.lock",
@@ -46,18 +46,18 @@
   },
   {
     "file": "setup.ps1",
-    "bytes": 920,
-    "sha256": "90877bf8bb304f4670b539c74b4c692ca37e6c914aeb3008dd756beabe021b4f"
+    "bytes": 923,
+    "sha256": "5d69294b8e00b3b905a7e22638a3e74709795a6dc3766f7ef72e4cd88b80d340"
   },
   {
     "file": "start-local.ps1",
-    "bytes": 1091,
-    "sha256": "8ca7c72e5181ee9ec851eb3bbb4471fccb51e01b2519afe2afd9afbef021381b"
+    "bytes": 1094,
+    "sha256": "f69c3e9f21334acf20dc0d0b6d4857cf7a1514b9afbf290ccbc4d3fab9b3520d"
   },
   {
     "file": "验证报告.md",
-    "bytes": 7026,
-    "sha256": "ca1a99d81f65b557238925d8166c77fa0d0d2b9e8e390a923f06f6a65fb6d0c9"
+    "bytes": 7402,
+    "sha256": "963a091e4c32ebde2324e5416c5d41c584dd5d7405f4d4978fc8d28434694199"
   },
   {
     "file": "docs/schema.sql",
@@ -193,6 +193,11 @@
     "file": "tests/test_monitor.py",
     "bytes": 11520,
     "sha256": "1ee9de86aab49554372e3c07a7669974e4b355a12b89fb69cb972f11d068751f"
+  },
+  {
+    "file": "tests/test_powershell.py",
+    "bytes": 1952,
+    "sha256": "6893baa0d66c8358f7b6bae194d82f9bcc2ec438c30cf5662c1e8d63bd6cea15"
   },
   {
     "file": "tests/test_service.py",
