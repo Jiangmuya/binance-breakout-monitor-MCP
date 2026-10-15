@@ -110,7 +110,7 @@ for(const book of spec.books){
   const table=s.tables.add(`A6:${col(columns.length-1)}${last}`,true,`T_${key}`);
   table.showFilterButton=true;
   s.getRangeByIndexes(5,0,n+1,columns.length).format.borders={preset:'all',style:'thin',color:'#B7C5D3'};
-  s.freezePanes.freezeRows(6);s.freezePanes.freezeColumns(key==='parameters'?1:2);
+  s.freezePanes.freezeRows(6);
  }
  wb.recalculate();
  const errors=await wb.inspect({kind:'match',searchTerm:'#REF!|#DIV/0!|#VALUE!|#NAME\\?|#NUM!|#NULL!|#SPILL!|#CALC!',options:{useRegex:true,maxResults:20},maxChars:2000});

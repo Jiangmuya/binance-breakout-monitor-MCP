@@ -110,7 +110,7 @@ def verify(directory,spec_path):
                 assert pane is not None
                 assert pane.attrib.get('state')=='frozen', (name,pane.attrib)
                 assert float(pane.attrib.get('ySplit','0'))==6, (name,pane.attrib)
-                assert float(pane.attrib.get('xSplit','0'))==(1 if key=='parameters' else 2), (name,pane.attrib)
+                assert float(pane.attrib.get('xSplit','0'))==0, (name,pane.attrib)
                 table_parts=root.findall('s:tableParts/s:tablePart',NS)
                 assert len(table_parts)==1, name
                 sheet_rels=relationships(z,part)

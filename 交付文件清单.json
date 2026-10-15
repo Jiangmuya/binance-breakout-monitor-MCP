@@ -11,8 +11,8 @@
   },
   {
     "file": "CHANGELOG.md",
-    "bytes": 1982,
-    "sha256": "a0c3835c407ad56234e4945a824a8a21a959d1ad9eb78bc20b4faf4a3af35ddd"
+    "bytes": 2358,
+    "sha256": "962e42d8416adc049a8cd4e919802918661abb07fd33244c659d99a2cf92e076"
   },
   {
     "file": "LICENSE",
@@ -131,8 +131,8 @@
   },
   {
     "file": "excel_builder.mjs",
-    "bytes": 10751,
-    "sha256": "6fd4d839e51d79f59a7cf3af3597570da395b12fe7d929a81418dab340b050af"
+    "bytes": 10699,
+    "sha256": "2f3f0dd588f57e5cb5cab7036ed1c669a381be3db28ca3d9bae89a212de341a7"
   },
   {
     "file": "monitor/__init__.py",
@@ -216,8 +216,8 @@
   },
   {
     "file": "tests/verify_excel.py",
-    "bytes": 12273,
-    "sha256": "a5f79d086e1aa9fae473b3905e5fc13d0c90d4eb0cb7674881031434e9d28608"
+    "bytes": 12243,
+    "sha256": "a928fb8cefaa78c01a1b005a83b7295b90de44a76986c5ff76f734dbf797dc48"
   },
   {
     "file": "验证报告.md",
