@@ -12,7 +12,8 @@ def beijing(ms):
 
 def alert(payload):
     b=payload['bar'];m=payload['metrics']
-    return dict(type='监控条件触发，不代表实际交易',signal_id=payload['signal_id'],
+    window=payload.get('comparison_window',15 if 'V15_mean' in m else 20)
+    message=dict(type='监控条件触发，不代表实际交易',signal_id=payload['signal_id'],
                 strategy_version=payload['strategy_version'],symbol=payload['symbol'],
                 contract_type=payload['contract_type'],interval=payload['interval'],
                 open_beijing=beijing(b['t']),close_boundary_beijing=beijing(b['T']+1),
@@ -20,12 +21,16 @@ def alert(payload):
                 discovered_utc_ms=payload['discovered'],event_type=payload['event_type'],
                 origin=payload['origin'],close=b['c'],EMA12=payload['ema'][0],
                 EMA50=payload['ema'][1],EMA200=payload['ema'][2],
-                EMA排列='EMA12 > EMA50 > EMA200：满足',base_volume=b['v'],quote_volume_usdt=b['q'],
-                V20_mean=m['V20_mean'],V20_max=m['V20_max'],volume_ratio=m['volume_ratio'],
+                EMA条件=('收盘价 > EMA12、EMA50、EMA200：满足' if window==15 else
+                         '收盘价 > EMA12 > EMA50 > EMA200，且EMA12上升：满足'),
+                comparison_window=window,base_volume=b['v'],quote_volume_usdt=b['q'],
+                volume_ratio=m['volume_ratio'],
                 body=m['body'],relative_body_ratio=m['relative_body_ratio'],bar_return=m['bar_return'],
-                previous_max_return=m['G20_max'],breakout=m['breakout'],body_share=m['body_share'],
+                previous_max_return=m[f'G{window}_max'],breakout=m['breakout'],body_share=m['body_share'],
                 upper_wick_share=m['upper_wick_share'],checks=m['checks'],
                 readiness=payload['readiness'],discovery_latency_ms=payload['latency_ms'])
+    message.update({f'V{window}_mean':m[f'V{window}_mean'],f'V{window}_max':m[f'V{window}_max']})
+    return message
 
 class ConsoleAdapter:
     name='console_local'

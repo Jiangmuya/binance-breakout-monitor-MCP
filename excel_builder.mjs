@@ -21,25 +21,25 @@ const prices=['o','h','l','c'].map((k,i)=>c(k,['开盘价','最高价','最低�
 const dates=[c('t','开盘时间 北京','date',29),c('close_boundary','收盘边界 北京','date',29),c('t','开盘UTC毫秒','integer',22),c('T','API收盘UTC毫秒','integer',22)];
 const triggerDates=dates.map(x=>x.key==='close_boundary'?{...x,label:'触发K线收盘时间 北京',width:32}:x);
 const comparisons=[
- c('V20_mean','前20均量'),c('V20_median','前20中位量'),c('V20_max','前20最大量'),c('volume_ratio','量比'),
+ c('V_mean','比较均量'),c('V_median','比较中位量'),c('V_max','比较最大量'),c('volume_ratio','量比'),
  c('body','有符号实体','price'),c('abs_body','绝对实体','price'),c('relative_body','相对实体','rate'),
- c('B20_mean','前20相对实体均值','rate'),c('relative_body_ratio','相对实体倍数'),
- c('abs_body20_mean','前20实体均值','price'),c('abs_body20_median','前20实体中位','price'),c('abs_body20_max','前20实体最大','price'),
+ c('B_mean','比较相对实体均值','rate'),c('relative_body_ratio','相对实体倍数'),
+ c('abs_body_mean','比较实体均值','price'),c('abs_body_median','比较实体中位','price'),c('abs_body_max','比较实体最大','price'),
  c('abs_body_mean_ratio','实体/均值'),c('abs_body_median_ratio','实体/中位'),c('abs_body_max_ratio','实体/最大'),
  c('abs_body_vs_mean','实体减均值','price'),c('abs_body_vs_median','实体减中位','price'),c('abs_body_vs_max','实体减最大','price'),
- c('positive_count','前20阳线数','integer'),c('positive_body_mean','阳线实体均值','price'),
- c('bar_return','开收盘涨幅','rate'),c('close_return','相对前收盘涨幅','rate'),c('G20_mean','前20平均涨幅','rate'),
- c('G20_median','前20中位涨幅','rate'),c('G20_max','前20最大涨幅','rate'),c('return_vs_mean','涨幅减均值','rate'),
- c('return_vs_max','涨幅减最大','rate'),c('H20','前20最高价','price'),c('breakout','突破幅度','rate'),
+ c('positive_count','比较阳线数','integer'),c('positive_body_mean','阳线实体均值','price'),
+ c('bar_return','开收盘涨幅','rate'),c('close_return','相对前收盘涨幅','rate'),c('G_mean','比较平均涨幅','rate'),
+ c('G_median','比较中位涨幅','rate'),c('G_max','比较最大涨幅','rate'),c('return_vs_mean','涨幅减均值','rate'),
+ c('return_vs_max','涨幅减最大','rate'),c('H','比较最高价','price'),c('breakout','突破幅度','rate'),
  c('body_share','实体占比','rate'),c('upper_wick_share','上影占比','rate'),
- c('volume_rank','成交量排名/21','integer'),c('body_rank','实体排名/21','integer'),c('return_rank','涨幅排名/21','integer')];
+ c('volume_rank','成交量排名','integer'),c('body_rank','实体排名','integer'),c('return_rank','涨幅排名','integer')];
 const schemas={
  overview:[...identity,c('close_boundary','收盘边界 北京','date',29),c('c','收盘价','price'),...emas,
   c('ema_bullish','EMA多头排列','bool'),c('volume_ratio','量比'),c('relative_body_ratio','相对实体倍数'),c('bar_return','开收盘涨幅','rate'),
   ...checks,c('trigger','整体触发','bool'),c('readiness','预热状态','text',24),c('warmup','已积累K线','integer'),
   c('health','数据状态','text',22),c('stale','快照存在缺口','bool',20),c('updated','最后更新 北京','date',29),
   c('seed','EMA种子UTC毫秒','integer',22),c('t','开盘UTC毫秒','integer',22),c('T','API收盘UTC毫秒','integer',22),
-  c('strategy_version','策略版本','text',27),c('detail','状态说明','text',55)],
+  c('comparison_window','比较窗口根数','integer',20),c('strategy_version','策略版本','text',27),c('detail','状态说明','text',55)],
  triggers:[...identity,c('interval','周期','text'),...triggerDates,
   ...prices,c('v','基础币成交量'),c('q','USDT成交额'),...emas,...comparisons,...checks,
   c('event_type','事件类型','text',20),c('origin','数据来源阶段','text',20),c('readiness','预热状态','text',24),
@@ -47,23 +47,36 @@ const schemas={
   c('discovered','发现UTC毫秒','integer',22),c('received','接收UTC毫秒','integer',22),c('processed','处理UTC毫秒','integer',22),c('event_time','交易所事件UTC毫秒','integer',24),
   c('notification_status','通知状态','text',24),c('sent','发送时间 北京','date',29),c('sent','发送UTC毫秒','integer',22),
   c('latency_ms','发现延迟毫秒','integer',20),c('sending_latency_ms','发送延迟毫秒','integer',20),c('attempts','通知尝试次数','integer'),
-  c('thresholds','阈值JSON','text',70),c('signal_id','signal_id','text',68),c('strategy_version','策略版本','text',27)],
- previous:[c('signal_id','signal_id','text',68),c('symbol','交易对','text',20),c('interval','周期','text'),c('index','前20序号','integer'),
+  c('thresholds','阈值JSON','text',70),c('comparison_window','比较窗口根数','integer',20),c('signal_id','signal_id','text',68),c('strategy_version','策略版本','text',27)],
+ previous:[c('signal_id','signal_id','text',68),c('symbol','交易对','text',20),c('interval','周期','text'),c('index','比较K线序号','integer'),
   ...dates,...prices,c('v','基础币成交量'),c('q','USDT成交额'),c('abs_body','绝对实体','price'),c('relative_body','相对实体','rate'),
-  c('bar_return','开收盘涨幅','rate'),c('close_return','相对前收盘涨幅','rate')],
+  c('bar_return','开收盘涨幅','rate'),c('close_return','相对前收盘涨幅','rate'),c('comparison_window','比较窗口根数','integer',20)],
  status:[c('time','记录时间 北京','date',29),c('symbol','交易对','text',20),c('interval','周期','text'),c('code','状态或异常','text',30),c('detail','详细说明','text',90),c('reason','排除原因','text',75)],
  parameters:[c('key','参数或口径','text',30),c('value','说明或值','text',125)]
 };
-const names={overview:'监控概览',triggers:'触发记录',previous:'前20根对照',status:'数据状态与异常',parameters:'参数与说明'};
+const names={overview:'监控概览',triggers:'触发记录',previous:'历史K线对照',status:'数据状态与异常',parameters:'参数与说明'};
 const sheetOrder=['triggers','overview','previous','status','parameters'];
 const clean=v=>typeof v==='string'&&/^[=+@]/.test(v)?"'"+v:v;
+// A process already running at upgrade time may still supply the v1 snapshot.
+// Keep its 20-bar values and labels explicit rather than relabeling them as 15.
+const normalize=(source,book)=>{
+ const row={...source};
+ const window=row.comparison_window??('V15_mean'in row?15:'V20_mean'in row?20:book.comparison_window??20);
+ row.comparison_window=window;
+ for(const [prefix,suffixes]of [['V',['mean','median','max']],['B',['mean']],['G',['mean','median','max']],['abs_body',['mean','median','max']]]){
+  for(const suffix of suffixes)row[`${prefix}_${suffix}`]??=row[`${prefix}${window}_${suffix}`];
+ }
+ row.H??=row[`H${window}`];
+ row.volume_highlight=window===15&&row.V_mean!=null&&row.V_max!=null&&row.v>=5*row.V_mean&&row.v>row.V_max;
+ return row;
+};
 const verification=[];
 for(const book of spec.books){
  const wb=Workbook.create();
  // The first added worksheet is also the workbook's default opening sheet.
  for(const key of sheetOrder){
   const columns=schemas[key];
-  const rows=book[key],s=wb.worksheets.add(names[key]);
+  const rows=book[key].map(row=>normalize(row,book)),s=wb.worksheets.add(names[key]);
   const n=Math.max(rows.length,1),last=6+n;
   s.showGridLines=false;
   const all=s.getRangeByIndexes(0,0,last,columns.length);
@@ -110,6 +123,9 @@ for(const book of spec.books){
   const table=s.tables.add(`A6:${col(columns.length-1)}${last}`,true,`T_${key}`);
   table.showFilterButton=true;
   s.getRangeByIndexes(5,0,n+1,columns.length).format.borders={preset:'all',style:'thin',color:'#B7C5D3'};
+  if(key==='overview'||key==='triggers')rows.forEach((row,index)=>{
+   if(row.volume_highlight)s.getRangeByIndexes(index+6,0,1,columns.length).format.font={name:'Microsoft YaHei',size:10,color:'#FF0000'};
+  });
   s.freezePanes.freezeRows(6);
  }
  wb.recalculate();

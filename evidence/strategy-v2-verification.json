@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-20",
+  "timezone": "Asia/Shanghai",
+  "changed_files": {
+    "config.json": "fa07d01f8e71ebaa34b76dfc207cf6bf5bbf9ecb9f1ac8932d174c794d5b7f3a",
+    "excel_builder.mjs": "0797618e1a19fac579ef7e27a9a21c42ee47e52c002c33d91dbe768c1111dc10",
+    "monitor/core.py": "cd6f2780b4e2de98234bbbd3f230c9ee0cf9141c68815ea7ae5625ed7145ee30",
+    "monitor/export.py": "d34e19f1fbb84ffcd05beb3e9f22264fbcdcd08b689cfb2bd9923e26ea3fe0f6",
+    "monitor/notifications.py": "4dbbea5b960bac00ff6d3fb2d30be157462cf828afb7644637e137ea8ce4678e",
+    "monitor/service.py": "f244c675ba88df0a0303d440618e3a65f738e7b8adaa9e712a634e9a6429311a",
+    "README.md": "43ad53efc908331b13704bd8fe0b731a62228959e629fcaed8680ef058a0de54",
+    "tests/test_monitor.py": "02dd4cced65727c95353c8a6e88b6683978883bc1038d849764e39f118a76bc1",
+    "tests/test_notification_rules.py": "d9d1b72c40fb2cdbc0f3644bd0dc0d79f69c24523289692ee3e81a2e08a65ec8",
+    "tests/test_strategy_export.py": "337b4cb30435dddffe7d61b4019f4896c4a9c0912ca0eed316959ed87e29bda4",
+    "tests/test_strategy_v2.py": "c90c42575d7e7e151f1796ecbdea63b108f214dc573dc677c9673166779044a9",
+    "tests/verify_excel.py": "72f1d976a0744548a2080ca018eb69d7bc58ba4f4eaa3cd7a319910ed6276daf"
+  },
+  "unit_tests": {
+    "passed": 72,
+    "failed": 0
+  },
+  "excel_verification": {
+    "mixed_windows": [
+      15,
+      20
+    ],
+    "red_rows_checked": 3,
+    "legacy_snapshot_compatible": true,
+    "frozen_header_only": true,
+    "thin_borders_preserved": true
+  },
+  "scope": "Only the requested strategy changes and their documentation/tests; runtime data and generated production workbooks are not included."
+}

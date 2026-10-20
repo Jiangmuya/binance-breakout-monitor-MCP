@@ -14,7 +14,7 @@
   "historical_analysis": false,
   "historical_summary": false,
   "excel_max_data_rows": 200000,
-  "volume_multiple": 2.0,
+  "volume_multiple": 3.0,
   "body_multiple": 2.0,
   "min_body_share": 0.6,
   "max_upper_wick_share": 0.3,

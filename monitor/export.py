@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from .core import PERIODS, dumps, now_ms
+from .core import PERIODS, WINDOW, dumps, now_ms
 
 LABELS={'15m':'15分钟','1h':'1小时','4h':'4小时','1d':'日线'}
 SOURCE='https://fapi.binance.com/fapi/v1/klines'
@@ -26,7 +26,8 @@ def close_coverage(store,interval,boundary):
         rows=store.db.execute('''SELECT u.symbol,json_extract(s.state,'$.last') AS last,
             json_extract(s.state,'$.latest.bar.t') AS evaluated,
             json_extract(s.state,'$.health') AS health FROM universe u
-            LEFT JOIN states s ON s.symbol=u.symbol AND s.interval=? WHERE u.active=1''',(interval,)).fetchall()
+            LEFT JOIN states s ON s.symbol=u.symbol AND s.interval=? WHERE u.active=1
+            AND json_extract(u.info,'$.contractType')='PERPETUAL' ''',(interval,)).fetchall()
     missing=[r['symbol'] for r in rows if r['last'] is None or
              r['last']<boundary-PERIODS[interval] or r['evaluated'] is None or
              r['evaluated']<boundary-PERIODS[interval] or r['health']!='OK']
@@ -41,6 +42,15 @@ def safe_replace(temp,target):
         os.replace(temp,alternate)
         return str(alternate),True
 
+def comparison_window(p):
+    """Retain the window that produced a persisted record, including v1 history."""
+    m=p.get('metrics',{})
+    return p.get('comparison_window',m.get('comparison_window',
+        15 if 'V15_mean' in m or 'previous15' in p else 20))
+
+def comparison_bars(p):
+    return p.get('previous15',p.get('previous20',[]))
+
 def flatten(p):
     b=p['bar'];m=p['metrics']
     row={**b,**m,'symbol':p['symbol'],'interval':p['interval'],'contract_type':p['contract_type'],
@@ -48,6 +58,16 @@ def flatten(p):
          'readiness':p['readiness'],'seed':p['seed'],'warmup':p['count'],
          'strategy_version':p['strategy_version'],'discovered':p['discovered'],
          'event_time':p.get('event_time'),'processed':p['processed'],'close_boundary':b['T']+1}
+    window=comparison_window(p)
+    row['comparison_window']=window
+    for prefix,suffixes in (('V',('mean','median','max')),('B',('mean',)),
+                            ('G',('mean','median','max')),('abs_body',('mean','median','max'))):
+        for suffix in suffixes:
+            row[f'{prefix}_{suffix}']=m.get(f'{prefix}{window}_{suffix}')
+    row['H']=m.get(f'H{window}')
+    mean,maximum=row['V_mean'],row['V_max']
+    row['volume_highlight']=(window==15 and mean is not None and maximum is not None
+                             and b['v']>=5*mean and b['v']>maximum)
     row['received']=p.get('received')
     row.update({f'check{i+1}':bool(v) for i,v in enumerate(m['checks'])})
     row.update({k:p.get(k) for k in ('signal_id','event_type','origin','latency_ms')})
@@ -55,9 +75,11 @@ def flatten(p):
     return row
 
 def previous_rows(p):
-    output=[];prev=p.get('previous20_before_close')
-    for n,b in enumerate(p['previous20'],1):
+    window=comparison_window(p)
+    output=[];prev=p.get(f'previous{window}_before_close')
+    for n,b in enumerate(comparison_bars(p),1):
         row={**b,'signal_id':p['signal_id'],'symbol':p['symbol'],'interval':p['interval'],'index':n,
+             'comparison_window':window,
              'abs_body':abs(b['c']-b['o']),'relative_body':abs(b['c']/b['o']-1),
              'bar_return':b['c']/b['o']-1,'close_return':b['c']/prev-1 if prev else None,'close_boundary':b['T']+1}
         output.append(row);prev=b['c']
@@ -65,14 +87,19 @@ def previous_rows(p):
 
 def partitions(signals,cap):
     groups=collections.defaultdict(list)
-    # Limit signal chunks by the larger 20-row-per-signal comparison table.
-    capacity=max(1,cap//20)
+    # Mixed historical/current records retain their actual 20/15 comparison rows.
     for p in signals:
         month=dt.datetime.fromtimestamp(p['bar']['t']/1000,dt.timezone.utc).strftime('%Y-%m')
         groups[month].append(p)
     result=[]
     for month,rows in sorted(groups.items()):
-        for offset in range(0,len(rows),capacity): result.append((month,offset//capacity+1,rows[offset:offset+capacity]))
+        chunk=[];comparison_count=0;number=1
+        for p in rows:
+            count=len(comparison_bars(p))
+            if chunk and (comparison_count+count>cap or len(chunk)>=cap):
+                result.append((month,number,chunk));number+=1;chunk=[];comparison_count=0
+            chunk.append(p);comparison_count+=count
+        if chunk: result.append((month,number,chunk))
     return result
 
 def snapshot(store,config,intervals=None,refresh_reason='MANUAL',refresh_boundary=None):
@@ -104,7 +131,8 @@ def snapshot(store,config,intervals=None,refresh_reason='MANUAL',refresh_boundar
         for symbol,info in uni.items():
             s=states.get((symbol,interval),{})
             p=s.get('latest')
-            row=flatten(p) if p else dict(symbol=symbol,interval=interval,contract_type=info.get('contractType'),readiness='NOT_READY',trigger=False)
+            row=flatten(p) if p else dict(symbol=symbol,interval=interval,contract_type=info.get('contractType'),
+                                          readiness='NOT_READY',trigger=False,comparison_window=WINDOW)
             row.update(health=s.get('health','INITIALIZING'),warmup=s.get('count',0),
                        detail=s.get('detail',''),updated=s.get('updated'),price_precision=info.get('pricePrecision',8))
             row['stale']=((s.get('last') if s.get('last') is not None else -1)<boundary-PERIODS[interval] or
@@ -138,12 +166,16 @@ def snapshot(store,config,intervals=None,refresh_reason='MANUAL',refresh_boundar
                         {'key':'触发时间口径','value':'触发发现时间=程序判断并发现信号的时间；触发K线收盘时间=API收盘UTC毫秒+1；两者不等同，均以北京时间显示。'},
                         {'key':'时间口径','value':'北京时间显示；UTC毫秒保留；API收盘时间=周期结束边界−1ms；日线北京08:00结束'},
                         {'key':'EMA公式','value':'alpha=2/(N+1); EMA=alpha*C+(1-alpha)*上次EMA；首根收盘价种子；仅12/50/200'},
-                        {'key':'前20根窗口','value':'不含目标K线；各周期独立；排名为降序竞争排名，相同值并列'},
+                        {'key':'比较窗口','value':'当前策略为此前15根已收盘K线，不含目标K线；15分钟/1小时/4小时/日线各自独立。旧策略记录仍为20根，以各行“比较窗口根数”为准；排名包含目标K线，相同值并列。'},
+                        {'key':'监控范围','value':'仅USDT保证金、USDT报价且正在交易的永续合约；旧策略交割合约历史记录保留，不再新增监控。'},
+                        {'key':'EMA触发条件','value':'当前策略仅要求收盘价高于EMA12、EMA50和EMA200；不要求多头排列或EMA12上升。“EMA多头排列”仅展示客观状态。'},
+                        {'key':'放量与红字','value':'当前放量条件：V>=3×V15_mean 且 V>V15_max；V>=5×V15_mean 且 V>V15_max的15根窗口记录整行红字，不以其他条件通过为前提。旧20根统计不按15根口径标红。'},
                         {'key':'字段单位','value':'价格USDT；v基础币数量；q USDT成交额；收益率为小数；延迟毫秒；量比/实体比为倍数'},
                         {'key':'计算口径','value':'统计由版本化监控引擎计算并持久化，Excel为只读快照；修改Excel不会改变监控参数'},
                         {'key':'实体公式','value':'abs_body=abs(C-O); relative_body=abs(C/O-1); bar_return=C/O-1; close_return=C/前收盘-1'},
-                        {'key':'量价比较','value':'volume_ratio=V/前20均量; relative_body_ratio=relative_body/前20相对实体均值; body_share=abs(C-O)/(H-L)'},
-                        {'key':'形态与突破','value':'upper_wick_share=(H-max(O,C))/(H-L); breakout=C/前20最高价-1；零分母为空且不触发'},
+                        {'key':'量价比较','value':'volume_ratio=V/比较均量; relative_body_ratio=relative_body/比较相对实体均值；比较窗口根数随原策略保留，不重算历史记录。'},
+                        {'key':'形态与突破','value':'当前分母=abs(C-O)+H-max(O,C)，不含下影线；body_share=abs(C-O)/分母>=60%，upper_wick_share=(H-max(O,C))/分母<=30%；breakout=C/比较最高价-1；零分母为空且不触发。'},
+                        {'key':'旧策略记录','value':'旧20根记录的实体/上影占比仍以H-L为分母，EMA要求原多头排列及EMA12上升，放量阈值为原配置；原信号与统计不重算，详见策略版本及阈值。'},
                         {'key':'提醒区别','value':'HISTORICAL初始化；RECOVERED补数；REALTIME实时；EXPIRED发现超过120秒。NOT_REQUESTED未要求发送'},
                         {'key':'历史配置','value':dumps({'historical_analysis':config['historical_analysis'],'historical_summary':config['historical_summary']})},
                         {'key':'归档说明','value':f'全部记录保留数据库；本文件{len(group)}条信号；较早信号按UTC月份分卷，数据容量上限{config["excel_max_data_rows"]}行'},
@@ -151,12 +183,13 @@ def snapshot(store,config,intervals=None,refresh_reason='MANUAL',refresh_boundar
                         {'key':'配置','value':dumps(config)}]
             parameters += [{'key':f'历史策略 {v["version"]}', 'value':v['config']} for v in versions]
             books.append(dict(filename=f'币安USDT合约监控_{LABELS[interval]}{suffix}.xlsx',interval=interval,generated=stamp,
+                              comparison_window=WINDOW,
                               refresh_reason=refresh_reason,refresh_boundary=boundary,
                               coverage=dict(expected=len(uni),completed=len(uni)-len(missing),missing=missing),
                               overview=overview,triggers=trigger,previous=previous,status=status_chunks[-1],parameters=parameters))
         for index,chunk in enumerate(status_chunks[:-1],1):
             books.append(dict(filename=f'币安USDT合约监控_{LABELS[interval]}_异常归档_卷{index:03}.xlsx',interval=interval,
-                              generated=stamp,refresh_reason=refresh_reason,refresh_boundary=boundary,
+                              generated=stamp,comparison_window=WINDOW,refresh_reason=refresh_reason,refresh_boundary=boundary,
                               overview=[],triggers=[],previous=[],status=chunk,parameters=parameters))
     return books
 

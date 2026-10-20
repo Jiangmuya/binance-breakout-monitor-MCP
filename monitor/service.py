@@ -273,6 +273,8 @@ def health_snapshot(store):
         universe=store.universe()
         counts={i:{'expected':len(universe),'READY':0,'SHORT_WARMUP':0,'NOT_READY':0,'ERROR':0,'MISSING':len(universe),'max_delay_ms':0} for i in PERIODS}
         for row in store.db.execute('SELECT s.* FROM states s JOIN universe u USING(symbol) WHERE u.active=1'):
+            if row['symbol'] not in universe:
+                continue
             state=json.loads(row['state']); c=counts[row['interval']];c['MISSING']-=1
             c[state.get('readiness','NOT_READY')]+=1
             if state.get('health')!='OK': c['ERROR']+=1

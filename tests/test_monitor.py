@@ -48,7 +48,9 @@ class CoreTests(unittest.TestCase):
             return self.store.ingest('TESTUSDT','1h',[b],origin,received),b
 
     def test_universe_filter_and_dynamic_remove(self):
-        self.assertTrue(eligible(info('ABCUSDT_261225')))
+        self.assertTrue(eligible(info('ABCUSDT')))
+        delivery=info('ABCUSDT_261225');delivery['contractType']='CURRENT_QUARTER'
+        self.assertFalse(eligible(delivery))
         bad=info();bad['marginAsset']='BTC';self.assertFalse(eligible(bad))
         added,removed=self.store.refresh({'symbols':[info('NEWUSDT')]})
         self.assertEqual(added,{'NEWUSDT'});self.assertEqual(removed,{'TESTUSDT'})
@@ -64,9 +66,9 @@ class CoreTests(unittest.TestCase):
 
     def test_window_excludes_target(self):
         events,b=self.fire();self.assertEqual(len(events),1)
-        self.assertEqual(len(events[0]['previous20']),20)
-        self.assertEqual(events[0]['metrics']['V20_mean'],100)
-        self.assertTrue(all(x['t']<b[0] for x in events[0]['previous20']))
+        self.assertEqual(len(events[0]['previous15']),15)
+        self.assertEqual(events[0]['metrics']['V15_mean'],100)
+        self.assertTrue(all(x['t']<b[0] for x in events[0]['previous15']))
 
     def test_unclosed_cannot_ingest(self):
         b=bars(1)[0]
@@ -82,24 +84,25 @@ class CoreTests(unittest.TestCase):
             self.assertAlmostEqual(value,float(ref),places=10)
 
     def test_strict_ema_equality(self):
-        w=[parse_bar(r,'1h',now_ms()) for r in bars(20)]
-        b=parse_bar(signal_bar(bars(20)[-1]),'1h',now_ms())
-        self.assertFalse(metrics(b,w,[101,101,100],[100,100,99],DEFAULT_RULES)['checks'][1])
-        self.assertFalse(metrics(b,w,[102,101,100],[102,100,99],DEFAULT_RULES)['checks'][1])
+        w=[parse_bar(r,'1h',now_ms()) for r in bars(15)]
+        b=parse_bar(signal_bar(bars(15)[-1]),'1h',now_ms())
+        for index in range(3):
+            ema=[101,101,100];ema[index]=b['c']
+            self.assertFalse(metrics(b,w,ema,[100,100,99],DEFAULT_RULES)['checks'][1])
 
     def test_volume_boundary_and_max(self):
-        w=[parse_bar(r,'1h',now_ms()) for r in bars(20)]
-        b=parse_bar(signal_bar(bars(20)[-1],volume=200),'1h',now_ms())
+        w=[parse_bar(r,'1h',now_ms()) for r in bars(15)]
+        b=parse_bar(signal_bar(bars(15)[-1],volume=300),'1h',now_ms())
         self.assertTrue(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
-        b['v']=199.999;self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
-        w[0]['v']=300;b['v']=300
+        b['v']=299.999;self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
+        w[0]['v']=1000;b['v']=1000
         self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
 
     def test_shape_boundary(self):
-        w=[parse_bar(r,'1h',now_ms()) for r in bars(20)]
-        b=dict(t=0,T=0,o=101.,c=107.,h=110.,l=100.,v=1000.,q=100.)
+        w=[parse_bar(r,'1h',now_ms()) for r in bars(15)]
+        b=dict(t=0,T=0,o=100.,c=107.,h=110.,l=80.,v=1000.,q=100.)
         m=metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)
-        self.assertEqual(m['body_share'],.6);self.assertEqual(m['upper_wick_share'],.3)
+        self.assertEqual(m['body_share'],.7);self.assertEqual(m['upper_wick_share'],.3)
         self.assertTrue(m['checks'][5]);b['h']+=.0001
         self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][5])
 
@@ -109,7 +112,7 @@ class CoreTests(unittest.TestCase):
         self.seed(1500);self.assertEqual(self.store.state('TESTUSDT','1h')['readiness'],'READY')
 
     def test_zero_denominator(self):
-        w=[parse_bar(r,'1h',now_ms()) for r in bars(20)]
+        w=[parse_bar(r,'1h',now_ms()) for r in bars(15)]
         for b in w: b['v']=0;b['c']=b['o']
         m=metrics(w[-1],w,[1,1,1],[1,1,1],DEFAULT_RULES)
         self.assertIsNone(m['volume_ratio']);self.assertFalse(m['trigger']);self.assertFalse(m['available'])
@@ -174,7 +177,7 @@ class CoreTests(unittest.TestCase):
     def test_partition_no_loss(self):
         events,_=self.fire();items=[dict(events[0],signal_id=str(n)) for n in range(13)]
         chunks=partitions(items,100)
-        self.assertEqual([len(c[2]) for c in chunks],[5,5,3])
+        self.assertEqual([len(c[2]) for c in chunks],[6,6,1])
         self.assertEqual(len({p['signal_id'] for c in chunks for p in c[2]}),13)
 
     def test_locked_excel_preserves_old(self):

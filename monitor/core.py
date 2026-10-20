@@ -9,8 +9,10 @@ import time
 from pathlib import Path
 
 PERIODS = {'15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000}
+WINDOW = 15
+HIGHLIGHT_VOLUME_MULTIPLE = 5.
 RULE_KEYS = ('volume_multiple', 'body_multiple', 'min_body_share', 'max_upper_wick_share')
-DEFAULT_RULES = dict(zip(RULE_KEYS, (2., 2., .6, .3)))
+DEFAULT_RULES = dict(zip(RULE_KEYS, (3., 2., .6, .3)))
 
 def now_ms():
     return time.time_ns() // 1000000
@@ -20,11 +22,12 @@ def dumps(obj):
 
 def version(config):
     policy = dict(config)
-    policy.update(formula_version=1, periods=PERIODS, seed='first_close', min_bars=200, window=20)
-    return 'v1-' + hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:16]
+    policy.update(formula_version=2, periods=PERIODS, seed='first_close', min_bars=200, window=WINDOW)
+    return 'v2-' + hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:16]
 
 def eligible(row):
-    return all(row.get(k) == v for k, v in [('quoteAsset', 'USDT'), ('marginAsset', 'USDT'), ('status', 'TRADING')])
+    return all(row.get(k) == v for k, v in [('quoteAsset', 'USDT'), ('marginAsset', 'USDT'),
+                                          ('status', 'TRADING'), ('contractType', 'PERPETUAL')])
 
 def parse_bar(raw, interval, closed_at):
     b = dict(t=int(raw[0]), o=float(raw[1]), h=float(raw[2]), l=float(raw[3]),
@@ -43,45 +46,49 @@ def parse_bar(raw, interval, closed_at):
     return b
 
 def metrics(b, window, ema, prev_ema, rules):
-    if len(window) != 20:
-        return {'available': False, 'reason': 'WINDOW_NOT_READY', 'checks': [False]*6, 'trigger': False}
+    if len(window) != WINDOW:
+        return {'available': False, 'reason': 'WINDOW_NOT_READY', 'checks': [False]*6,
+                'trigger': False, 'comparison_window': WINDOW, 'volume_highlight': False}
     vs = [x['v'] for x in window]
     abs_bodies = [abs(x['c']-x['o']) for x in window]
     returns = [x['c']/x['o']-1 for x in window]
     positives = [x['c']-x['o'] for x in window if x['c'] > x['o']]
-    m = dict(body=b['c']-b['o'], abs_body=abs(b['c']-b['o']),
+    m = dict(comparison_window=WINDOW, body=b['c']-b['o'], abs_body=abs(b['c']-b['o']),
              relative_body=abs(b['c']/b['o']-1), bar_return=b['c']/b['o']-1,
              close_return=b['c']/window[-1]['c']-1,
-             V20_mean=statistics.fmean(vs), V20_median=statistics.median(vs), V20_max=max(vs),
-             B20_mean=statistics.fmean(map(abs,returns)), G20_mean=statistics.fmean(returns),
-             G20_median=statistics.median(returns), G20_max=max(returns), H20=max(x['h'] for x in window),
-             abs_body20_mean=statistics.fmean(abs_bodies), abs_body20_median=statistics.median(abs_bodies),
-             abs_body20_max=max(abs_bodies), positive_count=len(positives),
+             V15_mean=statistics.fmean(vs), V15_median=statistics.median(vs), V15_max=max(vs),
+             B15_mean=statistics.fmean(map(abs,returns)), G15_mean=statistics.fmean(returns),
+             G15_median=statistics.median(returns), G15_max=max(returns), H15=max(x['h'] for x in window),
+             abs_body15_mean=statistics.fmean(abs_bodies), abs_body15_median=statistics.median(abs_bodies),
+             abs_body15_max=max(abs_bodies), positive_count=len(positives),
              positive_body_mean=statistics.fmean(positives) if positives else None)
     def ratio(a, z): return a/z if z > 0 else None
-    m.update(volume_ratio=ratio(b['v'],m['V20_mean']),
-             relative_body_ratio=ratio(m['relative_body'],m['B20_mean']),
-             body_share=ratio(m['abs_body'],b['h']-b['l']),
-             upper_wick_share=ratio(b['h']-max(b['o'],b['c']),b['h']-b['l']),
-             abs_body_mean_ratio=ratio(m['abs_body'],m['abs_body20_mean']),
-             abs_body_median_ratio=ratio(m['abs_body'],m['abs_body20_median']),
-             abs_body_max_ratio=ratio(m['abs_body'],m['abs_body20_max']),
-             abs_body_vs_mean=m['abs_body']-m['abs_body20_mean'],
-             abs_body_vs_median=m['abs_body']-m['abs_body20_median'],
-             abs_body_vs_max=m['abs_body']-m['abs_body20_max'],
-             return_vs_mean=m['bar_return']-m['G20_mean'],
-             return_vs_max=m['bar_return']-m['G20_max'],
-             breakout=b['c']/m['H20']-1,
+    upper_wick=b['h']-max(b['o'],b['c'])
+    shape_range=m['abs_body']+upper_wick
+    m.update(volume_ratio=ratio(b['v'],m['V15_mean']),
+             relative_body_ratio=ratio(m['relative_body'],m['B15_mean']),
+             body_share=ratio(m['abs_body'],shape_range),
+             upper_wick_share=ratio(upper_wick,shape_range),
+             abs_body_mean_ratio=ratio(m['abs_body'],m['abs_body15_mean']),
+             abs_body_median_ratio=ratio(m['abs_body'],m['abs_body15_median']),
+             abs_body_max_ratio=ratio(m['abs_body'],m['abs_body15_max']),
+             abs_body_vs_mean=m['abs_body']-m['abs_body15_mean'],
+             abs_body_vs_median=m['abs_body']-m['abs_body15_median'],
+             abs_body_vs_max=m['abs_body']-m['abs_body15_max'],
+             return_vs_mean=m['bar_return']-m['G15_mean'],
+             return_vs_max=m['bar_return']-m['G15_max'],
+             breakout=b['c']/m['H15']-1,
              volume_rank=1+sum(v>b['v'] for v in vs),
              body_rank=1+sum(x>m['abs_body'] for x in abs_bodies),
              return_rank=1+sum(x>m['bar_return'] for x in returns))
     m['ema_bullish'] = ema[0] > ema[1] > ema[2]
+    m['volume_highlight'] = b['v']>=HIGHLIGHT_VOLUME_MULTIPLE*m['V15_mean'] and b['v']>m['V15_max']
     m['available'] = all(m[k] is not None for k in ('volume_ratio','relative_body_ratio','body_share','upper_wick_share'))
-    m['checks'] = [b['c']>b['o'] and b['c']>m['H20'],
-                   b['c']>ema[0]>ema[1]>ema[2] and ema[0]>prev_ema[0],
-                   b['v']>=rules['volume_multiple']*m['V20_mean'] and b['v']>m['V20_max'],
-                   m['relative_body']>=rules['body_multiple']*m['B20_mean'],
-                   m['bar_return']>m['G20_max'],
+    m['checks'] = [b['c']>b['o'] and b['c']>m['H15'],
+                   all(b['c']>value for value in ema),
+                   b['v']>=rules['volume_multiple']*m['V15_mean'] and b['v']>m['V15_max'],
+                   m['relative_body']>=rules['body_multiple']*m['B15_mean'],
+                   m['bar_return']>m['G15_max'],
                    m['available'] and m['body_share']>=rules['min_body_share'] and m['upper_wick_share']<=rules['max_upper_wick_share']]
     m['trigger'] = m['available'] and all(m['checks'])
     m['reason'] = '' if m['available'] else 'ZERO_DENOMINATOR'
@@ -148,7 +155,8 @@ class Store:
             for x in rows:
                 selected=eligible(x)
                 reason='' if selected else ';'.join(f'{k}={x.get(k)}' for k,v in
-                       [('quoteAsset','USDT'),('marginAsset','USDT'),('status','TRADING')] if x.get(k)!=v)
+                       [('quoteAsset','USDT'),('marginAsset','USDT'),('status','TRADING'),
+                        ('contractType','PERPETUAL')] if x.get(k)!=v)
                 self.db.execute('INSERT OR REPLACE INTO universe VALUES(?,?,?,?,?)',
                     (x['symbol'],int(selected),dumps(x),reason,now_ms()))
             for s in old-set(chosen):
@@ -165,7 +173,8 @@ class Store:
 
     def universe(self):
         with self.lock:
-            return {r['symbol']:json.loads(r['info']) for r in self.db.execute('SELECT * FROM universe WHERE active=1 ORDER BY symbol')}
+            rows=self.db.execute('SELECT * FROM universe WHERE active=1 ORDER BY symbol')
+            return {r['symbol']:info for r in rows if eligible(info:=json.loads(r['info']))}
 
     def state(self,symbol,interval):
         with self.lock:
@@ -201,7 +210,13 @@ class Store:
         with self.lock,self.db:
             s=dict(count=0,window=[],ema=None,last=None,seed=None)
             s.update(self.state(symbol,interval) or {})
+            # Continue an existing EMA seed while reducing a legacy 20-bar comparison window.
+            if len(s['window'])>WINDOW:
+                s['before_window_close']=s['window'][-WINDOW-1]['c']
+                s['window']=s['window'][-WINDOW:]
             active=self.db.execute('SELECT info FROM universe WHERE symbol=? AND active=1',(symbol,)).fetchone()
+            if active and not eligible(json.loads(active[0])):
+                active=None
             for b in bars:
                 old=self.db.execute('SELECT t,o,h,l,c,v,close_time,q FROM bars WHERE symbol=? AND interval=? AND t=?',
                                     (symbol,interval,b['t'])).fetchone()
@@ -223,11 +238,12 @@ class Store:
                 count=s['count']+1
                 ready='READY' if count>=1500 else ('SHORT_WARMUP' if count>=200 else 'NOT_READY')
                 assess=origin!='HISTORICAL' or self.config.get('historical_analysis') or index==len(pending)-1
-                m=metrics(b,s['window'][-20:],ema,prev,self.rules) if assess else None
+                m=metrics(b,s['window'][-WINDOW:],ema,prev,self.rules) if assess else None
                 if m:
                     m['trigger']=bool(m['trigger'] and count>=200 and active)
                     payload=dict(symbol=symbol,contract_type=json.loads(active[0]).get('contractType','') if active else '',
                                  interval=interval,bar=b,ema=ema,previous_ema=prev,metrics=m,readiness=ready,
+                                 comparison_window=WINDOW,
                                  count=count,seed=s['seed'] or b['t'],strategy_version=self.version,
                                  discovered=discovered,received=received,processed=processed,event_time=event_time,origin=origin)
                     self.db.execute('INSERT OR IGNORE INTO evaluations VALUES(?,?,?,?,?)',
@@ -238,7 +254,7 @@ class Store:
                         age=discovered-(b['T']+1)
                         event_type='HISTORICAL' if origin=='HISTORICAL' else ('EXPIRED' if age>self.config['live_max_age_seconds']*1000 else origin)
                         payload=dict(payload,signal_id=signal_id,event_type=event_type,latency_ms=age,
-                                     previous20=list(s['window'][-20:]),previous20_before_close=s.get('before_window_close'))
+                                     previous15=list(s['window'][-WINDOW:]),previous15_before_close=s.get('before_window_close'))
                         inserted=self.db.execute('INSERT OR IGNORE INTO signals VALUES(?,?,?,?,?,?,?)',
                              (signal_id,self.version,symbol,interval,b['t'],event_type,dumps(payload))).rowcount
                         if inserted:
@@ -248,9 +264,9 @@ class Store:
                                                 (signal_id,dumps(payload),'PENDING',received))
                 s.update(count=count,ema=ema,last=b['t'],seed=s['seed'] if s['seed'] is not None else b['t'],
                          readiness=ready,health='OK',detail='',updated=processed)
-                if len(s['window'])>=20:
+                if len(s['window'])>=WINDOW:
                     s['before_window_close']=s['window'][0]['c']
-                s['window']=(s['window']+[b])[-20:]
+                s['window']=(s['window']+[b])[-WINDOW:]
             if bars:
                 s.update(health='OK',detail='',updated=processed)
             self.db.execute('INSERT OR REPLACE INTO states VALUES(?,?,?)',(symbol,interval,dumps(s)))

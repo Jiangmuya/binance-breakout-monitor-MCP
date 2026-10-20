@@ -1,5 +1,6 @@
 """Read exported OOXML without Excel-authoring libraries; reconcile with export input."""
 import json
+from collections import Counter
 import math
 import posixpath
 import re
@@ -11,20 +12,31 @@ from pathlib import Path
 NS={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 REL_NS='http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 PACKAGE_REL_NS='http://schemas.openxmlformats.org/package/2006/relationships'
-SHEETS=[('triggers','触发记录'),('overview','监控概览'),('previous','前20根对照'),
+SHEETS=[('triggers','触发记录'),('overview','监控概览'),('previous','历史K线对照'),
         ('status','数据状态与异常'),('parameters','参数与说明')]
 TRIGGER_HEADERS=[
     '交易对','合约类型','周期','开盘时间 北京','触发K线收盘时间 北京','开盘UTC毫秒','API收盘UTC毫秒',
     '开盘价','最高价','最低价','收盘价','基础币成交量','USDT成交额','EMA12','EMA50','EMA200',
-    '前20均量','前20中位量','前20最大量','量比','有符号实体','绝对实体','相对实体',
-    '前20相对实体均值','相对实体倍数','前20实体均值','前20实体中位','前20实体最大',
-    '实体/均值','实体/中位','实体/最大','实体减均值','实体减中位','实体减最大','前20阳线数','阳线实体均值',
-    '开收盘涨幅','相对前收盘涨幅','前20平均涨幅','前20中位涨幅','前20最大涨幅','涨幅减均值','涨幅减最大',
-    '前20最高价','突破幅度','实体占比','上影占比','成交量排名/21','实体排名/21','涨幅排名/21',
+    '比较均量','比较中位量','比较最大量','量比','有符号实体','绝对实体','相对实体',
+    '比较相对实体均值','相对实体倍数','比较实体均值','比较实体中位','比较实体最大',
+    '实体/均值','实体/中位','实体/最大','实体减均值','实体减中位','实体减最大','比较阳线数','阳线实体均值',
+    '开收盘涨幅','相对前收盘涨幅','比较平均涨幅','比较中位涨幅','比较最大涨幅','涨幅减均值','涨幅减最大',
+    '比较最高价','突破幅度','实体占比','上影占比','成交量排名','实体排名','涨幅排名',
     '阳线突破','EMA条件','放量','实体扩张','涨幅扩张','阳线形态','事件类型','数据来源阶段','预热状态',
     'EMA种子UTC毫秒','累计K线数','触发发现时间 北京','发现UTC毫秒','接收UTC毫秒','处理UTC毫秒','交易所事件UTC毫秒',
     '通知状态','发送时间 北京','发送UTC毫秒','发现延迟毫秒','发送延迟毫秒','通知尝试次数','阈值JSON',
-    'signal_id','策略版本']
+    '比较窗口根数','signal_id','策略版本']
+
+def window_of(row,book):
+    return row.get('comparison_window',
+        15 if 'V15_mean' in row else 20 if 'V20_mean' in row else book.get('comparison_window',20))
+
+def is_high_volume(row,book):
+    window=window_of(row,book)
+    mean=row.get('V_mean',row.get(f'V{window}_mean'))
+    maximum=row.get('V_max',row.get(f'V{window}_max'))
+    return (window==15 and mean is not None and maximum is not None
+            and row.get('v',0)>=5*mean and row.get('v',0)>maximum)
 
 def column(number):
     result=''
@@ -95,11 +107,12 @@ def verify(directory,spec_path):
             number_formats={int(n.attrib['numFmtId']):n.attrib.get('formatCode','')
                             for n in styles.findall('s:numFmts/s:numFmt',NS)}
             cell_xfs=styles.findall('s:cellXfs/s:xf',NS)
+            fonts=styles.findall('s:fonts/s:font',NS)
             borders=styles.findall('s:borders/s:border',NS)
             assert any('yyyy-mm-dd' in f for f in formats)
             assert any('%' in f for f in formats)
             assert any('0.0000' in f for f in formats)
-            checked=0; bordered_cells=0; verified_tables=set(); trigger_dates_checked=0
+            checked=0; bordered_cells=0; verified_tables=set(); trigger_dates_checked=0; red_rows=0
             for sheet,(key,name) in zip(sheets,SHEETS):
                 part=sheet_parts[sheet.attrib[f'{{{REL_NS}}}id']]
                 root,data=cells(z,part,strings)
@@ -140,6 +153,18 @@ def verify(directory,spec_path):
                             assert line is not None and line.attrib.get('style')=='thin', (name,address,edge)
                         bordered_cells+=1
                 numeric_date(data,cell_nodes,cell_xfs,number_formats,'B3',book['generated'])
+                if key in ('overview','triggers'):
+                    for rownum,source in enumerate(book[key],7):
+                        highlight=is_high_volume(source,book)
+                        if highlight: red_rows+=1
+                        for index in range(1,len(columns)+1):
+                            node=cell_nodes[f'{column(index)}{rownum}']
+                            xf=cell_xfs[int(node.attrib.get('s','0'))]
+                            font=fonts[int(xf.attrib.get('fontId','0'))]
+                            color=font.find('s:color',NS)
+                            rgb='' if color is None else color.attrib.get('rgb','').upper()
+                            assert rgb.endswith('FF0000')==highlight, (name,rownum,index,rgb,highlight)
+                        assert data.get(f'{header_columns["比较窗口根数"]}{rownum}')==window_of(source,book)
                 if key=='overview':
                     for rownum,source in enumerate(book[key],7):
                         assert data.get(f'A{rownum}')==source['symbol']
@@ -162,6 +187,14 @@ def verify(directory,spec_path):
                         assert value('signal_id')==source['signal_id']
                         assert value('策略版本')==source['strategy_version']
                         assert value('交易对')==source['symbol']
+                        window=window_of(source,book)
+                        for label,field in [('比较均量','V_mean'),('比较最大量','V_max'),
+                                            ('比较最高价','H'),('实体占比','body_share'),
+                                            ('上影占比','upper_wick_share')]:
+                            legacy=f'H{window}' if field=='H' else field.replace('_',f'{window}_',1)
+                            expected=source.get(field,source.get(legacy));actual=value(label)
+                            if expected is None: assert actual is None, (label,actual)
+                            else: assert math.isclose(actual,expected,rel_tol=1e-12,abs_tol=1e-12)
                         for label,field,utc_label,adjustment in (
                             ('开盘时间 北京','t','开盘UTC毫秒',0),
                             ('触发K线收盘时间 北京','close_boundary','API收盘UTC毫秒',1),
@@ -174,10 +207,12 @@ def verify(directory,spec_path):
                             assert utc+adjustment==milliseconds, (source['signal_id'],label,utc,milliseconds)
                             trigger_dates_checked+=1
                 elif key=='previous':
-                    assert len(book[key])==20*len(book['triggers'])
+                    counts=Counter(row['signal_id'] for row in book[key])
+                    assert counts==Counter({r['signal_id']:window_of(r,book) for r in book['triggers']})
                     for n,row in enumerate(book[key],7):
                         assert data[f'A{n}']==row['signal_id']
                         assert data[f'D{n}']==row['index']
+                        assert data.get(f'{header_columns["比较窗口根数"]}{n}')==window_of(row,book)
             assert len(verified_tables)==5
             assert len([n for n in z.namelist() if re.fullmatch(r'xl/tables/[^/]+\.xml',n)])==5
             records.append({'file':book['filename'],'interval':book['interval'],'overview_rows':len(book['overview']),
@@ -185,6 +220,7 @@ def verify(directory,spec_path):
                             'numeric_values_checked':checked,'xlsx_reopened':True,'styles_filters_freeze':True,
                             'first_active_sheet':'触发记录','trigger_column_order_verified':True,
                             'trigger_dates_checked':trigger_dates_checked,'all_borders_cells_checked':bordered_cells,
+                            'high_volume_red_rows_checked':red_rows,
                             'macros_external_links':False})
     return records
 
