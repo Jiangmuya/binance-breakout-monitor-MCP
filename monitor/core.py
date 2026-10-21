@@ -10,9 +10,55 @@ from pathlib import Path
 
 PERIODS = {'15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000}
 WINDOW = 15
-HIGHLIGHT_VOLUME_MULTIPLE = 5.
+HIGHLIGHT_VOLUME_MULTIPLE = 4.
+DEFAULT_VOLUME_MULTIPLES = {'15m': 4., '1h': 2.5, '4h': 2.5, '1d': 2.5}
+DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES = {'15m': 5., '1h': 4., '4h': 4., '1d': 4.}
 RULE_KEYS = ('volume_multiple', 'body_multiple', 'min_body_share', 'max_upper_wick_share')
-DEFAULT_RULES = dict(zip(RULE_KEYS, (3., 2., .6, .3)))
+DEFAULT_RULES = dict(zip(RULE_KEYS, (2.5, 2., .6, .3)))
+
+def validate_volume_rules(config):
+    """Reject incomplete or nonfinite period policies before any market processing."""
+    for key, defaults in (('volume_multiple_by_interval', DEFAULT_VOLUME_MULTIPLES),
+                          ('volume_highlight_multiple_by_interval', DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES)):
+        values = config.get(key, defaults)
+        if not isinstance(values, dict) or set(values) != set(PERIODS):
+            raise ValueError(f'{key}: all four intervals are required')
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) or
+               not math.isfinite(value) or value <= 0 for value in values.values()):
+            raise ValueError(f'{key}: multiples must be finite and positive')
+    trigger = config.get('volume_multiple_by_interval', DEFAULT_VOLUME_MULTIPLES)
+    highlight = config.get('volume_highlight_multiple_by_interval', DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES)
+    if any(highlight[interval] < trigger[interval] for interval in PERIODS):
+        raise ValueError('volume highlight multiple must be at least the trigger multiple')
+
+def rules_for_interval(config, interval):
+    if interval not in PERIODS:
+        raise ValueError('Invalid strategy interval')
+    return {**{k: config.get(k, DEFAULT_RULES[k]) for k in RULE_KEYS},
+            'volume_multiple': config.get('volume_multiple_by_interval', DEFAULT_VOLUME_MULTIPLES)[interval],
+            'volume_highlight_multiple': config.get('volume_highlight_multiple_by_interval',
+                                                    DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES)[interval]}
+
+def stored_volume_highlight(payload):
+    """Use the record's rule, never today's policy, for a historical Excel row."""
+    m = payload.get('metrics', {})
+    window = payload.get('comparison_window', m.get('comparison_window',
+        15 if 'V15_mean' in m or 'previous15' in payload else 20))
+    if window != 15:
+        return False
+    if 'volume_highlight' in m:
+        return bool(m['volume_highlight'])
+    mean, maximum = m.get('V15_mean'), m.get('V15_max')
+    if mean is None or maximum is None:
+        return False
+    multiple = m.get('volume_highlight_multiple', m.get('thresholds', {}).get('volume_highlight_multiple'))
+    if multiple is None:
+        # v2 records used five times mean volume for every period.
+        if str(payload.get('strategy_version', '')).startswith('v3-'):
+            return False
+        multiple = 5.
+    volume = payload.get('bar', {}).get('v')
+    return volume is not None and volume >= multiple*mean and volume > maximum
 
 def now_ms():
     return time.time_ns() // 1000000
@@ -22,8 +68,8 @@ def dumps(obj):
 
 def version(config):
     policy = dict(config)
-    policy.update(formula_version=2, periods=PERIODS, seed='first_close', min_bars=200, window=WINDOW)
-    return 'v2-' + hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:16]
+    policy.update(formula_version=3, periods=PERIODS, seed='first_close', min_bars=200, window=WINDOW)
+    return 'v3-' + hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:16]
 
 def eligible(row):
     return all(row.get(k) == v for k, v in [('quoteAsset', 'USDT'), ('marginAsset', 'USDT'),
@@ -82,7 +128,10 @@ def metrics(b, window, ema, prev_ema, rules):
              body_rank=1+sum(x>m['abs_body'] for x in abs_bodies),
              return_rank=1+sum(x>m['bar_return'] for x in returns))
     m['ema_bullish'] = ema[0] > ema[1] > ema[2]
-    m['volume_highlight'] = b['v']>=HIGHLIGHT_VOLUME_MULTIPLE*m['V15_mean'] and b['v']>m['V15_max']
+    m['volume_highlight_multiple'] = rules.get('volume_highlight_multiple', HIGHLIGHT_VOLUME_MULTIPLE)
+    m['volume_threshold'] = rules['volume_multiple']*m['V15_mean']
+    m['volume_highlight_threshold'] = m['volume_highlight_multiple']*m['V15_mean']
+    m['volume_highlight'] = b['v']>=m['volume_highlight_threshold'] and b['v']>m['V15_max']
     m['available'] = all(m[k] is not None for k in ('volume_ratio','relative_body_ratio','body_share','upper_wick_share'))
     m['checks'] = [b['c']>b['o'] and b['c']>m['H15'],
                    all(b['c']>value for value in ema),
@@ -118,13 +167,14 @@ CREATE TABLE IF NOT EXISTS anomalies(id INTEGER PRIMARY KEY AUTOINCREMENT,time I
 
 class Store:
     def __init__(self, path, config):
+        validate_volume_rules(config)
         Path(path).parent.mkdir(parents=True,exist_ok=True)
         self.db = sqlite3.connect(path,check_same_thread=False,timeout=30)
         self.db.row_factory=sqlite3.Row
         self.db.executescript(SCHEMA)
         self.lock=threading.RLock()
         self.config=config
-        self.rules={k:config[k] for k in RULE_KEYS}
+        self.rules={interval:rules_for_interval(config, interval) for interval in PERIODS}
         self.version=version(config)
         with self.db:
             self.db.execute('INSERT OR IGNORE INTO versions VALUES(?,?,?)',(self.version,dumps(config),now_ms()))
@@ -238,7 +288,7 @@ class Store:
                 count=s['count']+1
                 ready='READY' if count>=1500 else ('SHORT_WARMUP' if count>=200 else 'NOT_READY')
                 assess=origin!='HISTORICAL' or self.config.get('historical_analysis') or index==len(pending)-1
-                m=metrics(b,s['window'][-WINDOW:],ema,prev,self.rules) if assess else None
+                m=metrics(b,s['window'][-WINDOW:],ema,prev,self.rules[interval]) if assess else None
                 if m:
                     m['trigger']=bool(m['trigger'] and count>=200 and active)
                     payload=dict(symbol=symbol,contract_type=json.loads(active[0]).get('contractType','') if active else '',

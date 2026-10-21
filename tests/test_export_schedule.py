@@ -230,7 +230,8 @@ class SnapshotPublicationTests(unittest.TestCase):
         original_version = self.store.version
         with patch('monitor.core.now_ms', return_value=detected):
             event = self.store.ingest('TESTUSDT', '15m', [target], 'REALTIME', detected)[0]
-        books = snapshot(self.store, self.config, ['15m'], 'CANDLE_CLOSE', boundary)
+        with patch('monitor.export.now_ms', return_value=detected):
+            books = snapshot(self.store, self.config, ['15m'], 'CANDLE_CLOSE', boundary)
         trigger = books[0]['triggers'][0]
         self.assertEqual(trigger['discovered'], detected)
         self.assertEqual(trigger['close_boundary'], boundary)

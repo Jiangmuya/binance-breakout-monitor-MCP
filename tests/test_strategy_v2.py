@@ -53,10 +53,10 @@ class RuleV2Tests(unittest.TestCase):
                        DEFAULT_RULES if rules is None else rules)
 
     def test_default_thresholds_and_new_formula_version(self):
-        self.assertEqual(DEFAULT_RULES, dict(volume_multiple=3., body_multiple=2.,
+        self.assertEqual(DEFAULT_RULES, dict(volume_multiple=2.5, body_multiple=2.,
                                             min_body_share=.6, max_upper_wick_share=.3))
-        self.assertEqual(CONFIG['volume_multiple'], 3.)
-        self.assertTrue(version(CONFIG).startswith('v2-'))
+        self.assertEqual(CONFIG['volume_multiple'], 2.5)
+        self.assertTrue(version(CONFIG).startswith('v3-'))
 
     def test_nonbullish_ema_and_falling_ema12_still_trigger(self):
         result = self.calculate()
@@ -102,10 +102,10 @@ class RuleV2Tests(unittest.TestCase):
         self.assertFalse(result['trigger'])
         self.assertEqual(result['reason'], 'ZERO_DENOMINATOR')
 
-    def test_three_and_five_times_volume_boundaries(self):
+    def test_hourly_two_point_five_and_four_times_volume_boundaries(self):
         for volume, triggered, highlighted in (
-                (299.999, False, False), (300., True, False),
-                (499.999, True, False), (500., True, True)):
+                (249.999, False, False), (250., True, False),
+                (399.999, True, False), (400., True, True)):
             with self.subTest(volume=volume):
                 result = self.calculate(bar=dict(self.bar, v=volume))
                 self.assertEqual(result['checks'][2], triggered)
@@ -167,7 +167,7 @@ class PersistenceV2Tests(unittest.TestCase):
                 rows[-16][1:6] = [1., 1000000., .5, 10000., 1000000.]
                 self.store.ingest('TESTUSDT', interval, rows, 'HISTORICAL',
                                   rows[-1][6]+1)
-                target = candidate(rows[-1], interval, volume=300.)
+                target = candidate(rows[-1], interval, volume=400.)
                 at = target[6]+10
                 with patch('monitor.core.now_ms', return_value=at):
                     self.store.ingest('TESTUSDT', interval, [target], 'REALTIME', at)

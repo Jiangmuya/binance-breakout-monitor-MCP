@@ -67,7 +67,10 @@ const normalize=(source,book)=>{
   for(const suffix of suffixes)row[`${prefix}_${suffix}`]??=row[`${prefix}${window}_${suffix}`];
  }
  row.H??=row[`H${window}`];
- row.volume_highlight=window===15&&row.V_mean!=null&&row.V_max!=null&&row.v>=5*row.V_mean&&row.v>row.V_max;
+ // Preserve the decision/threshold saved with each strategy version.
+ // Legacy 15-bar records without these fields retain their original 5x rule.
+ row.volume_highlight=window===15&&(typeof row.volume_highlight==='boolean'?row.volume_highlight:
+  row.V_mean!=null&&row.V_max!=null&&row.v>=(row.volume_highlight_multiple??5)*row.V_mean&&row.v>row.V_max);
  return row;
 };
 const verification=[];
@@ -85,7 +88,10 @@ for(const book of spec.books){
   s.getRange('A1').values=[[`${names[key]} · ${book.interval}`]];
   s.getRange('A1').format.font={name:'Microsoft YaHei',size:17,bold:true,color:'#15344F'};
   s.getRange('A1').format.rowHeight=34;
-  s.getRange('A2').values=[['只读监控；真实行情快照。条件触发不代表实际交易。']];
+  const periodTime=ms=>new Date(ms+28800000).toISOString().slice(0,16).replace('T',' ');
+  const reportPeriod=book.report_period_start==null||book.report_period_end==null?'':
+   `本期按提醒发现时间归属：${periodTime(book.report_period_start)} 至 ${periodTime(book.report_period_end)}（北京时间，含起不含止）。`;
+  s.getRange('A2').values=[['只读监控；真实行情快照。条件触发不代表实际交易。'+reportPeriod]];
   s.getRange('A3').values=[['快照时间 北京']];s.getRange('B3').values=[[serial(book.generated)]];
   s.getRange('B3').setNumberFormat('yyyy-mm-dd hh:mm:ss');
   const recordSummary=rows.length?`本表记录 ${rows.length} 条；数值来自持久化数据库。`:'本次无记录；未填入任何模拟信号。';

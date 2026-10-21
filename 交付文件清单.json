@@ -11,8 +11,8 @@
   },
   {
     "file": "CHANGELOG.md",
-    "bytes": 3338,
-    "sha256": "98ad6cc57c5e1863eed5aca0c477336200657f6dde29ab4ffc86c9044c569c04"
+    "bytes": 4326,
+    "sha256": "dff8f109a40d2925b4dd46529322e99597701df16319c59a9f1ed52d3fcf6900"
   },
   {
     "file": "LICENSE",
@@ -21,13 +21,13 @@
   },
   {
     "file": "README.md",
-    "bytes": 13628,
-    "sha256": "43ad53efc908331b13704bd8fe0b731a62228959e629fcaed8680ef058a0de54"
+    "bytes": 15808,
+    "sha256": "3a031bf71158aa784c32a78c1fc5b7df47b45ff42ea933497a8b316dc11a1a44"
   },
   {
     "file": "config.json",
-    "bytes": 718,
-    "sha256": "fa07d01f8e71ebaa34b76dfc207cf6bf5bbf9ecb9f1ac8932d174c794d5b7f3a"
+    "bytes": 888,
+    "sha256": "bf9b2a5a56a737a09e02be18e1985432ad31cef34af5a75ad9da7866ec8ffc59"
   },
   {
     "file": "docs/schema.sql",
@@ -78,6 +78,16 @@
     "file": "evidence/strategy-v2-verification.json",
     "bytes": 1652,
     "sha256": "8a03565cb45100233b5eb720186af2f72e88c1ee3e38e9d3287ac0c07d9d45b4"
+  },
+  {
+    "file": "evidence/strategy-v3-excel-verification.json",
+    "bytes": 1925,
+    "sha256": "f64fd47e95c20a66649e89eb4699f83fd437e49fe90914cd978f00fa899daefd"
+  },
+  {
+    "file": "evidence/strategy-v3-unit-tests.txt",
+    "bytes": 14143,
+    "sha256": "b4681f1dd260c114301d5a017138f2efb6bc860b4ab70abcf1c4f2f349182237"
   },
   {
     "file": "evidence/unit-test-results.txt",
@@ -136,8 +146,8 @@
   },
   {
     "file": "excel_builder.mjs",
-    "bytes": 11853,
-    "sha256": "0797618e1a19fac579ef7e27a9a21c42ee47e52c002c33d91dbe768c1111dc10"
+    "bytes": 12451,
+    "sha256": "d1ae43182fca6423d6e1053babb1d3d59b9142b54dc6be4fe9e6caba671535b2"
   },
   {
     "file": "monitor/__init__.py",
@@ -150,14 +160,19 @@
     "sha256": "4b3e271b12c43eda3c2953eb36fbcf126a6c863d5928085ae0ac514dc50d5805"
   },
   {
+    "file": "monitor/archive.py",
+    "bytes": 7485,
+    "sha256": "17e993a44504f71f2470bcfd77a3994456570640d0fdab87bba6bbdbd3e3814b"
+  },
+  {
     "file": "monitor/core.py",
-    "bytes": 16356,
-    "sha256": "cd6f2780b4e2de98234bbbd3f230c9ee0cf9141c68815ea7ae5625ed7145ee30"
+    "bytes": 19415,
+    "sha256": "9c1f98ddb53988c78b1b027e5a7b907e819aee43eafb011bb428df5143551ee1"
   },
   {
     "file": "monitor/export.py",
-    "bytes": 19437,
-    "sha256": "d34e19f1fbb84ffcd05beb3e9f22264fbcdcd08b689cfb2bd9923e26ea3fe0f6"
+    "bytes": 24668,
+    "sha256": "71c8ad8e5182b46250cafba7b018e60a28ab1faec04750cc39717bcb7cfc7ab2"
   },
   {
     "file": "monitor/notifications.py",
@@ -166,8 +181,8 @@
   },
   {
     "file": "monitor/service.py",
-    "bytes": 16769,
-    "sha256": "f244c675ba88df0a0303d440618e3a65f738e7b8adaa9e712a634e9a6429311a"
+    "bytes": 16826,
+    "sha256": "2981615302cb8563d5ad4f6b8302517bc891adea567d9b8a052cdcff11ccddaf"
   },
   {
     "file": "monitor/transport.py",
@@ -200,14 +215,19 @@
     "sha256": "218aef1ff0266efba3d0f2aeb64f3e0b96ee39d05a0ab6d64d724f41e82e4510"
   },
   {
+    "file": "tests/test_archive_periods.py",
+    "bytes": 17511,
+    "sha256": "58b27f76b40265eb89459e9c9be6835d05c378e5dcdac48c9adf2b3976ff7fb8"
+  },
+  {
     "file": "tests/test_export_schedule.py",
-    "bytes": 15359,
-    "sha256": "8c60ca3a2eb9039e2bccbd5bb1a39cb0501b19980bcd8e1b9d237cb396788cb7"
+    "bytes": 15431,
+    "sha256": "773717ecbaf9ea091a5d0bae487bbcc7a3f8d9510f473197c9801e23267f0ada"
   },
   {
     "file": "tests/test_monitor.py",
     "bytes": 11622,
-    "sha256": "02dd4cced65727c95353c8a6e88b6683978883bc1038d849764e39f118a76bc1"
+    "sha256": "dca1c7a8b182014383881e3c598e1fcbe3f496643d0957247488fe38938d9203"
   },
   {
     "file": "tests/test_notification_rules.py",
@@ -226,22 +246,27 @@
   },
   {
     "file": "tests/test_strategy_export.py",
-    "bytes": 6792,
-    "sha256": "337b4cb30435dddffe7d61b4019f4896c4a9c0912ca0eed316959ed87e29bda4"
+    "bytes": 8477,
+    "sha256": "3058c686fabd02974ab0a218cfbc6823fe754e1de94f6ba024f94c9e2076c272"
   },
   {
     "file": "tests/test_strategy_v2.py",
-    "bytes": 13906,
-    "sha256": "c90c42575d7e7e151f1796ecbdea63b108f214dc573dc677c9673166779044a9"
+    "bytes": 13924,
+    "sha256": "6fd23a6bb4f2be78e3ec3d2d078789bb2ff163daca456c21c497cb3167afbf3c"
+  },
+  {
+    "file": "tests/test_volume_periods.py",
+    "bytes": 9705,
+    "sha256": "a5dbf33c9ebe1f9ff817b539dcac832f38f4067ecb68070f8df6a6804f2740bf"
   },
   {
     "file": "tests/verify_excel.py",
-    "bytes": 14716,
-    "sha256": "72f1d976a0744548a2080ca018eb69d7bc58ba4f4eaa3cd7a319910ed6276daf"
+    "bytes": 15387,
+    "sha256": "a7a0ce1c679580c7317d3a13d20a9dc94827ebc1176850e7f4b4952cf6208fff"
   },
   {
     "file": "验证报告.md",
-    "bytes": 9997,
-    "sha256": "e563b17bd78ae4988c05b4d248aecb7c6b172df7d513198490332d0238085c16"
+    "bytes": 10517,
+    "sha256": "10e5a35b4f916e15ccac1de194a571cc8d243c77d6dfe8f3fdcc3fe30fc15025"
   }
 ]

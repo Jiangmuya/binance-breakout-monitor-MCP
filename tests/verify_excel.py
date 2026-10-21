@@ -1,6 +1,7 @@
 """Read exported OOXML without Excel-authoring libraries; reconcile with export input."""
 import json
 from collections import Counter
+import datetime as dt
 import math
 import posixpath
 import re
@@ -33,10 +34,15 @@ def window_of(row,book):
 
 def is_high_volume(row,book):
     window=window_of(row,book)
+    if window!=15:
+        return False
+    if isinstance(row.get('volume_highlight'),bool):
+        return row['volume_highlight']
     mean=row.get('V_mean',row.get(f'V{window}_mean'))
     maximum=row.get('V_max',row.get(f'V{window}_max'))
-    return (window==15 and mean is not None and maximum is not None
-            and row.get('v',0)>=5*mean and row.get('v',0)>maximum)
+    multiple=row.get('volume_highlight_multiple',5)
+    return (mean is not None and maximum is not None
+            and row.get('v',0)>=multiple*mean and row.get('v',0)>maximum)
 
 def column(number):
     result=''
@@ -153,6 +159,10 @@ def verify(directory,spec_path):
                             assert line is not None and line.attrib.get('style')=='thin', (name,address,edge)
                         bordered_cells+=1
                 numeric_date(data,cell_nodes,cell_xfs,number_formats,'B3',book['generated'])
+                if book.get('report_period_start') is not None and book.get('report_period_end') is not None:
+                    fmt=lambda ms:dt.datetime.fromtimestamp(ms/1000,dt.timezone(dt.timedelta(hours=8))).strftime('%Y-%m-%d %H:%M')
+                    assert (f'本期按提醒发现时间归属：{fmt(book["report_period_start"])} 至 '
+                            f'{fmt(book["report_period_end"])}（北京时间，含起不含止）。') in data.get('A2','')
                 if key in ('overview','triggers'):
                     for rownum,source in enumerate(book[key],7):
                         highlight=is_high_volume(source,book)

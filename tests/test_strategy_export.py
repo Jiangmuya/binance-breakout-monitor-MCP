@@ -3,6 +3,7 @@ import copy
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from monitor.core import PERIODS, Store, dumps
@@ -68,6 +69,31 @@ class StrategyExportTests(unittest.TestCase):
                 self.assertEqual(row['volume_highlight'],expected)
         self.assertFalse(flatten(payload(20,volume=10000))['volume_highlight'])
 
+    def test_saved_highlight_thresholds_preserve_each_interval_and_legacy_rules(self):
+        for interval in PERIODS:
+            multiple=5 if interval=='15m' else 4
+            for volume,maximum,expected in [
+                (multiple*100,200,True),(multiple*100-.001,200,False),
+                (multiple*100,multiple*100,False),(multiple*100+1,multiple*100,True),
+            ]:
+                with self.subTest(interval=interval,volume=volume,maximum=maximum):
+                    p=payload(interval=interval,volume=volume,maximum=maximum)
+                    p['metrics']['volume_highlight_multiple']=multiple
+                    row=flatten(p)
+                    self.assertEqual(row['volume_highlight_multiple'],multiple)
+                    self.assertEqual(row['volume_highlight'],expected)
+            # A v2 row keeps its old 5x threshold, even in a newly generated book.
+            self.assertFalse(flatten(payload(interval=interval,volume=450))['volume_highlight'])
+
+    def test_saved_highlight_decision_is_not_reinterpreted_on_export(self):
+        for saved in (True,False):
+            p=payload(volume=100 if saved else 1000)
+            p['metrics'].update(volume_highlight=saved,volume_highlight_multiple=4)
+            self.assertEqual(flatten(p)['volume_highlight'],saved)
+        old=payload(20,volume=10000)
+        old['metrics'].update(volume_highlight=True,volume_highlight_multiple=4)
+        self.assertFalse(flatten(old)['volume_highlight'])
+
     def test_all_four_intervals_export_their_own_previous_fifteen(self):
         for interval,step in PERIODS.items():
             p=payload(interval=interval)
@@ -104,7 +130,9 @@ class StrategyExportTests(unittest.TestCase):
                             (p['signal_id'],p['strategy_version'],p['symbol'],p['interval'],
                              p['bar']['t'],p['event_type'],dumps(p)))
                 self.assertEqual(close_coverage(store,'1h',BASE+PERIODS['1h'])['expected'],1)
-                books=snapshot(store,config,intervals=['1h'])
+                # Both preserved records were discovered in this reporting week.
+                with patch('monitor.export.now_ms',return_value=BASE+24*PERIODS['1h']):
+                    books=snapshot(store,config,intervals=['1h'])
                 self.assertEqual(len(books),1)
                 book=books[0]
                 self.assertEqual(book['comparison_window'],15)

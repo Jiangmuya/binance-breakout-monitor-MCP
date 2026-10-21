@@ -92,9 +92,9 @@ class CoreTests(unittest.TestCase):
 
     def test_volume_boundary_and_max(self):
         w=[parse_bar(r,'1h',now_ms()) for r in bars(15)]
-        b=parse_bar(signal_bar(bars(15)[-1],volume=300),'1h',now_ms())
+        b=parse_bar(signal_bar(bars(15)[-1],volume=250),'1h',now_ms())
         self.assertTrue(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
-        b['v']=299.999;self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
+        b['v']=249.999;self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
         w[0]['v']=1000;b['v']=1000
         self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][2])
 

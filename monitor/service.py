@@ -7,7 +7,7 @@ import signal
 import math
 import time
 from pathlib import Path
-from .core import Store, PERIODS, RULE_KEYS, now_ms, dumps
+from .core import Store, PERIODS, RULE_KEYS, now_ms, dumps, validate_volume_rules
 from .transport import PublicClient
 
 def load_config(path):
@@ -25,6 +25,7 @@ def load_config(path):
     if not 20<=config['excel_max_data_rows']<=1000000: raise ValueError('Excel容量必须20..1000000')
     for k in RULE_KEYS:
         if not isinstance(config[k],(int,float)) or not math.isfinite(config[k]) or config[k]<0: raise ValueError('无效策略参数')
+    validate_volume_rules(config)
     if not 0<=config['min_body_share']<=1 or not 0<=config['max_upper_wick_share']<=1: raise ValueError('形态占比必须0..1')
     if config['historical_summary'] and not config['historical_analysis']: raise ValueError('历史摘要须同时启用历史分析')
     return config
