@@ -172,6 +172,8 @@ class Store:
         self.db = sqlite3.connect(path,check_same_thread=False,timeout=30)
         self.db.row_factory=sqlite3.Row
         self.db.executescript(SCHEMA)
+        from .export_index import initialize_export_index
+        initialize_export_index(self.db)
         self.lock=threading.RLock()
         self.config=config
         self.rules={interval:rules_for_interval(config, interval) for interval in PERIODS}

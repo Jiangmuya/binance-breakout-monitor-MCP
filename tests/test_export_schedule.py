@@ -197,7 +197,7 @@ class SnapshotPublicationTests(unittest.TestCase):
         self.store.ingest('TESTUSDT', '15m', rows, 'HISTORICAL', now_ms())
         self.assertEqual(self.store.state('TESTUSDT', '15m')['readiness'], 'NOT_READY')
         coverage = close_coverage(self.store, '15m', rows[-1][6] + 1)
-        self.assertEqual(coverage, {'expected': 1, 'completed': 1, 'missing': []})
+        self.assertEqual(coverage, {'expected': 1, 'completed': 1, 'missing': [], 'total_symbols': 1, 'not_applicable': [], 'current_warnings': []})
 
     def test_snapshot_filters_period_and_marks_missing_close(self):
         self.store.refresh({'symbols': [info(), info('MISSINGUSDT'), info('ERRORUSDT')]})
@@ -211,15 +211,17 @@ class SnapshotPublicationTests(unittest.TestCase):
         book = books[0]
         self.assertEqual(book['interval'], '15m')
         self.assertEqual(book['refresh_boundary'], boundary)
-        self.assertEqual(book['coverage']['completed'], 1)
-        self.assertEqual(set(book['coverage']['missing']), {'MISSINGUSDT', 'ERRORUSDT'})
+        self.assertEqual(book['coverage']['completed'], 2)
+        self.assertEqual(set(book['coverage']['missing']), {'MISSINGUSDT'})
         rows_by_symbol = {r['symbol']: r for r in book['overview']}
         self.assertFalse(rows_by_symbol['TESTUSDT']['stale'])
         self.assertTrue(rows_by_symbol['MISSINGUSDT']['stale'])
+        self.assertEqual(rows_by_symbol['ERRORUSDT']['health'], 'DATA_ERROR')
+        self.assertIn('ERRORUSDT',book['coverage']['current_warnings'])
         missing_rows = [r for r in book['status'] if r['code'] == 'CLOSE_NOT_PROCESSED']
-        self.assertEqual({r['symbol'] for r in missing_rows}, {'MISSINGUSDT', 'ERRORUSDT'})
+        self.assertEqual({r['symbol'] for r in missing_rows}, {'MISSINGUSDT'})
         self.assertTrue(all(str(boundary) in r['detail'] for r in missing_rows))
-        self.assertEqual(close_coverage(self.store, '15m', boundary)['completed'], 1)
+        self.assertEqual(close_coverage(self.store, '15m', boundary)['completed'], 2)
 
     def test_trigger_records_distinguish_detection_and_candle_close(self):
         rows = bars(200, '15m')
@@ -252,7 +254,7 @@ class SnapshotPublicationTests(unittest.TestCase):
             target.write_bytes(('old ' + interval).encode())
             files.append(str(target))
         self.store.meta('last_export', {'time': 123, 'files': files, 'pending_replace': False})
-        with patch('monitor.export.subprocess.run', side_effect=self.fake_builder):
+        with patch('monitor.export.run_builder', side_effect=self.fake_builder):
             outputs = export_all(self.store, self.config, intervals=['15m'],
                                  refresh_reason='CANDLE_CLOSE', refresh_boundary=BASE + PERIODS['15m'])
         state = self.store.get_meta('last_export')
@@ -272,7 +274,7 @@ class SnapshotPublicationTests(unittest.TestCase):
         previous = {'time': 123, 'files': [locked], 'pending_replace': True,
                     'by_interval': {'1h': {'time': 123, 'files': [locked], 'pending_replace': True}}}
         self.store.meta('last_export', previous)
-        with patch('monitor.export.subprocess.run', side_effect=self.fake_builder):
+        with patch('monitor.export.run_builder', side_effect=self.fake_builder):
             export_all(self.store, self.config, intervals=['15m'])
         state = self.store.get_meta('last_export')
         self.assertTrue(state['pending_replace'])
@@ -281,22 +283,30 @@ class SnapshotPublicationTests(unittest.TestCase):
         self.assertFalse(state['by_interval']['15m']['pending_replace'])
 
     def test_concurrent_period_exports_keep_all_files_and_separate_caches(self):
-        barrier = threading.Barrier(4)
+        active = 0
+        peak_active = 0
         specs = []
         guard = threading.Lock()
 
         def builder(command, **kwargs):
+            nonlocal active, peak_active
             with guard:
                 specs.append(Path(command[-2]))
-            result = self.fake_builder(command, **kwargs)
-            barrier.wait(timeout=5)
-            return result
+                active += 1
+                peak_active = max(peak_active, active)
+            try:
+                threading.Event().wait(.02)
+                return self.fake_builder(command, **kwargs)
+            finally:
+                with guard:
+                    active -= 1
 
-        with patch('monitor.export.subprocess.run', side_effect=builder):
+        with patch('monitor.export.run_builder', side_effect=builder):
             with ThreadPoolExecutor(max_workers=4) as pool:
                 results = list(pool.map(lambda i: export_all(self.store, self.config, intervals=[i]), PERIODS))
         state = self.store.get_meta('last_export')
         self.assertEqual(len(set(specs)), 4)
+        self.assertEqual(peak_active, 1)
         self.assertEqual({p.parent.name for p in specs}, set(PERIODS))
         self.assertEqual(set(state['by_interval']), set(PERIODS))
         self.assertEqual(set(state['files']), {r[0] for r in results})
@@ -308,7 +318,7 @@ class SnapshotPublicationTests(unittest.TestCase):
         manifest = self.root / '导出清单.json'
         manifest.write_text(json.dumps(previous), encoding='utf-8')
         original = manifest.read_bytes()
-        with patch('monitor.export.subprocess.run', return_value=SimpleNamespace(returncode=1, stderr='test failure')):
+        with patch('monitor.export.run_builder', return_value=SimpleNamespace(returncode=1, stderr='test failure')):
             with self.assertRaisesRegex(RuntimeError, '导出失败'):
                 export_all(self.store, self.config, intervals=['15m'])
         self.assertEqual(self.store.get_meta('last_export'), previous)

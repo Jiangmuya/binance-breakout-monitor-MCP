@@ -182,7 +182,7 @@ class Monitor:
         refreshed=time.monotonic()
         while not self.stop.is_set():
             await asyncio.sleep(10)
-            if time.monotonic()-refreshed>=self.config['universe_refresh_seconds']:
+            if time.monotonic()-refreshed>=min(self.config['universe_refresh_seconds'],86400):
                 try:
                     await self.store_async_meta_clock()
                     info=await self.client.exchange_info()
@@ -285,4 +285,7 @@ def health_snapshot(store):
             signals=store.db.execute('SELECT count(*) FROM signals').fetchone()[0],
             notifications=dict(store.db.execute('SELECT status,count(*) FROM outbox GROUP BY status').fetchall()),
             last_export=store.get_meta('last_export'),clock=store.get_meta('clock'),universe_stale=store.get_meta('universe_stale',True),
+            export_health=store.get_meta('export_health',dict(by_interval={})),
+            history_maintenance=store.get_meta('history_maintenance_health',{}),
+            universe_updated=store.get_meta('universe_updated'),
             database='OK' if store.db.execute('SELECT 1').fetchone()[0]==1 else 'ERROR')

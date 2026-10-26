@@ -11,4 +11,5 @@ try {
     & $PythonPath -m pip install --disable-pip-version-check --target $taskDepsPath -r (Join-Path $PSScriptRoot 'requirements.lock')
     if ($LASTEXITCODE -ne 0) { throw '依赖安装未成功。' }
 } finally { $env:TEMP=$taskOldTemp; $env:TMP=$taskOldTmp }
-Write-Output 'Python 依赖已安装。Excel 需要本机已有 Codex bundled @oai/artifact-tool 运行库。'
+& (Join-Path $PSScriptRoot 'setup-export.ps1')
+Write-Output 'Python 和流式 Excel 依赖已检查完成。'

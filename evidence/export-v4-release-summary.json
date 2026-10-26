@@ -1,0 +1,30 @@
+{
+  "as_of": "2026-10-27",
+  "quantitative_rules_changed": false,
+  "signal_reconciliation": {
+    "expected": 1897,
+    "missing": 0,
+    "unexpected": 0,
+    "duplicate_ids": 0,
+    "stored_signal_content_unchanged": true
+  },
+  "excel_filter_fix": {
+    "local_files_repaired": 18,
+    "redundant_filters_removed": 108,
+    "current_workbooks_opened_in_excel": 4,
+    "new_writer_fixture_opened_in_excel": true,
+    "filter_menu_verified": true,
+    "targeted_regression_tests_passed": 1
+  },
+  "continuous_acceptance": {
+    "ended_by_user": true,
+    "hours": 6.733247222222222,
+    "required_hours": 24,
+    "passed": false,
+    "late_batches": 11
+  },
+  "known_limitations": [
+    "Source market-connection and clock errors may delay evaluations.",
+    "Earlier regression and load reports remain historical evidence for their recorded code versions."
+  ]
+}

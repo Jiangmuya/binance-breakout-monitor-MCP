@@ -84,6 +84,12 @@ class ReportPublicationTests(unittest.TestCase):
 
     def fake_builder(self, command, **kwargs):
         spec = json.loads(Path(command[-2]).read_text(encoding='utf-8'))
+        for book in spec['books']:
+            for key in ('triggers', 'previous', 'overview', 'status', 'recent_anomalies'):
+                value = book.get(key)
+                if isinstance(value, dict) and 'ndjson' in value:
+                    book[key] = [json.loads(line) for line in Path(value['ndjson']).read_text(encoding='utf-8').splitlines()]
+                    self.assertEqual(len(book[key]), value['count'])
         self.built_batches.append(copy.deepcopy(spec['books']))
         for book in spec['books']:
             target = Path(command[-1]) / book['filename']
@@ -93,7 +99,7 @@ class ReportPublicationTests(unittest.TestCase):
 
     def publish(self, at, interval='15m', reason='CANDLE_CLOSE'):
         with patch('monitor.export.now_ms', return_value=at), \
-             patch('monitor.export.subprocess.run', side_effect=self.fake_builder):
+             patch('monitor.export.run_builder', side_effect=self.fake_builder):
             return export_all(self.store, self.config, intervals=[interval], refresh_reason=reason,
                               refresh_boundary=at // PERIODS[interval] * PERIODS[interval])
 
@@ -152,14 +158,14 @@ class ReportPublicationTests(unittest.TestCase):
         self.assertEqual(state['first_start'], stamp('2026-10-21 08:00'))
         self.assertEqual(state['current_start'], state['first_start'])
 
-    def test_first_migration_does_not_repartition_old_signals(self):
+    def test_first_migration_backfills_old_signals_and_preserves_legacy_file(self):
         at = stamp('2026-10-21 12:00')
         old = self.add_signal(stamp('2026-10-20 12:00'))
         self.main_path().write_bytes(b'legacy contains old signals')
         self.publish(at)
         generated = [b for batch in self.built_batches for b in batch]
-        self.assertFalse(any(b.get('archive') for b in generated))
-        self.assertNotIn(old['signal_id'], {r['signal_id'] for b in generated for r in b['triggers']})
+        self.assertTrue(any(b.get('archive') for b in generated))
+        self.assertIn(old['signal_id'], {r['signal_id'] for b in generated for r in b['triggers']})
         self.assertIn(b'legacy contains old signals', [p.read_bytes() for p in self.history_files()])
 
     def test_next_period_contains_only_new_records_and_archive_has_previous(self):
@@ -242,7 +248,7 @@ class ReportPublicationTests(unittest.TestCase):
         before_state = self.store.get_meta('excel_archive_15m')
         before_manifest = (Path(self.config['excel_dir']) / '导出清单.json').read_bytes()
         with patch('monitor.export.now_ms', return_value=stamp('2026-10-22 08:00')), \
-             patch('monitor.export.subprocess.run', return_value=SimpleNamespace(returncode=1, stderr='builder failed')):
+             patch('monitor.export.run_builder', return_value=SimpleNamespace(returncode=1, stderr='builder failed')):
             with self.assertRaises(RuntimeError):
                 export_all(self.store, self.config, intervals=['15m'])
         self.assertEqual(self.main_path().read_bytes(), before_file)
@@ -296,25 +302,43 @@ class ReportPublicationTests(unittest.TestCase):
         in_root = list(Path(self.config['excel_dir']).glob('*.xlsx'))
         self.assertEqual(in_root, [self.main_path()])
 
-    def test_status_overflow_uses_current_period_when_old_report_is_rebuilt(self):
+    def test_locked_snapshot_rollover_keeps_only_latest_canonical_members(self):
+        first=stamp('2026-10-21 12:00')
+        first_event=self.add_signal(first+1000)
+        self.publish(first+2000)
+        second_event=self.add_signal(first+3000)
+        replace=os.replace
+        def locked(source,target):
+            if Path(target)==self.main_path():raise PermissionError('Excel sharing lock')
+            return replace(source,target)
+        with patch('os.replace',side_effect=locked):self.publish(first+4000)
+        self.publish(stamp('2026-10-22 08:00')+1000)
+        row=self.store.db.execute('SELECT manifest FROM signals_export_metadata WHERE interval=? AND start=?',
+            ('15m',stamp('2026-10-21 08:00'))).fetchone()
+        manifest=json.loads(row[0])
+        records=[r for name in manifest['files'] for r in json.loads(Path(name).read_text(encoding='utf-8'))['triggers']]
+        self.assertEqual(len(records),2)
+        self.assertEqual({r['signal_id'] for r in records},{first_event['signal_id'],second_event['signal_id']})
+
+    def test_current_states_and_recent_anomalies_are_separate_when_history_rebuilt(self):
         first = stamp('2026-10-21 12:00')
         event = self.add_signal(first + 1000)
         self.publish(first + 2000)
         self.store.db.execute('UPDATE outbox SET status=? WHERE id=?', ('SENT', event['signal_id']))
         self.store.db.commit()
         self.config['excel_max_data_rows'] = 20
-        for n in range(22):
-            self.store.anomaly('', '15m', 'TEST', str(n))
         second = stamp('2026-10-22 08:00')
+        with patch('monitor.core.now_ms', return_value=second + 1000):
+            for n in range(22):
+                self.store.anomaly('', '15m', 'TEST', str(n))
         self.publish(second + 2000)
         books = self.built_batches[-1]
         self.assertTrue(any(b['archive'] for b in books))
-        overflow = [b for b in books if '异常归档' in b['filename']]
-        self.assertTrue(overflow)
-        for book in overflow:
-            parameters = {p['key']: p['value'] for p in book['parameters']}
-            self.assertEqual(book['report_period_start'], second)
-            self.assertTrue(parameters['记录归属期 北京'].startswith('20261022_0800'))
+        self.assertFalse(any('异常归档' in b['filename'] for b in books))
+        current = next(b for b in books if not b['archive'])
+        self.assertEqual(len(current['status']), len(self.symbols))
+        self.assertEqual(len(current['recent_anomalies']), 22)
+        self.assertEqual(current['report_period_start'], second)
 
 
 if __name__ == '__main__':

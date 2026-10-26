@@ -7,9 +7,10 @@ from .core import Store
 
 def main():
     parser=argparse.ArgumentParser(description='币安USDT合约只读监控')
-    parser.add_argument('command',choices=['init','bootstrap','run','export','status','stop'])
+    parser.add_argument('command',choices=['init','bootstrap','run','export','status','stop','reset-export'])
     parser.add_argument('--config',default='config.json')
     parser.add_argument('--seconds',type=int,default=0,help='run模式验证时长，0持续运行')
+    parser.add_argument('--backfill',action='store_true',help='export all changed historical periods from stored signals')
     args=parser.parse_args()
     config=load_config(args.config)
     if args.command=='stop':
@@ -18,12 +19,15 @@ def main():
         status=Path(config['data_dir'])/'health.json'
         print(status.read_text(encoding='utf-8') if status.exists() else '尚未运行');return
     with InstanceLock(config['data_dir']):
-        if args.command in ('init','export'):
+        if args.command in ('init','export','reset-export'):
             store=Store(Path(config['data_dir'])/'monitor.sqlite3',config)
             try:
                 if args.command=='export':
                     from .export import export_all
-                    print(json.dumps(export_all(store,config),ensure_ascii=False))
+                    print(json.dumps(export_all(store,config,backfill=args.backfill),ensure_ascii=False))
+                elif args.command=='reset-export':
+                    from .export_runtime import reset_circuit
+                    reset_circuit(store);print('导出熔断已重置；下次启动将重新尝试')
                 else: print('数据库初始化完成')
             finally: store.close()
             return

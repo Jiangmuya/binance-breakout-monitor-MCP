@@ -8,6 +8,10 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from .export_index import ExportIndex
+from .row_cache import RowCache
+from .export_runtime import (EXPORT_LOCK, settings, worker_revision, run_builder,
+    check_circuit, record_failure, record_success, export_health)
 from .core import PERIODS, WINDOW, dumps, now_ms, stored_volume_highlight, rules_for_interval
 from .archive import (ARCHIVE_DIR, report_period, report_timestamp, period_label, fingerprint,
                       split_rows, archive_target, begin_publication, resolved)
@@ -23,17 +27,23 @@ def next_boundary(stamp,interval):
     return (stamp//step+1)*step
 
 def close_coverage(store,interval,boundary):
-    """Only a committed, healthy state proves this close has been processed."""
+    """Report committed close records separately from current health warnings."""
+    from .close_applicability import close_applicable,load_exact_evaluations,close_processed
+    target=boundary-PERIODS[interval]
     with store.lock:
-        rows=store.db.execute('''SELECT u.symbol,json_extract(s.state,'$.last') AS last,
-            json_extract(s.state,'$.latest.bar.t') AS evaluated,
-            json_extract(s.state,'$.health') AS health FROM universe u
-            LEFT JOIN states s ON s.symbol=u.symbol AND s.interval=? WHERE u.active=1
-            AND json_extract(u.info,'$.contractType')='PERPETUAL' ''',(interval,)).fetchall()
-    missing=[r['symbol'] for r in rows if r['last'] is None or
-             r['last']<boundary-PERIODS[interval] or r['evaluated'] is None or
-             r['evaluated']<boundary-PERIODS[interval] or r['health']!='OK']
-    return dict(expected=len(rows),completed=len(rows)-len(missing),missing=missing)
+        rows=store.db.execute("""SELECT u.symbol,u.info,json_extract(s.state,'$.last') AS last,
+            json_extract(s.state,'$.latest.bar.t') AS evaluated,json_extract(s.state,'$.health') AS health
+            FROM universe u LEFT JOIN states s ON s.symbol=u.symbol AND s.interval=? WHERE u.active=1
+            AND json_extract(u.info,'$.contractType')='PERPETUAL' """,(interval,)).fetchall()
+        exact=load_exact_evaluations(store.db,interval,target)
+    applicable=[r for r in rows if close_applicable(json.loads(r['info']),boundary)]
+    expected_symbols={r['symbol'] for r in applicable}
+    not_applicable=[r['symbol'] for r in rows if r['symbol'] not in expected_symbols]
+    missing=[r['symbol'] for r in applicable if not close_processed(r['last'],r['evaluated'],r['health'],target,r['symbol'] in exact)]
+    warnings=[r['symbol'] for r in applicable if r['health']!='OK']
+    return dict(expected=len(applicable),completed=len(applicable)-len(missing),missing=missing,
+                total_symbols=len(rows),not_applicable=not_applicable,current_warnings=warnings)
+
 
 def safe_replace(temp,target):
     try:
@@ -104,142 +114,52 @@ def partitions(signals,cap):
         if chunk: result.append((month,number,chunk))
     return result
 
-def snapshot(store,config,intervals=None,refresh_reason='MANUAL',refresh_boundary=None):
-    intervals=list(PERIODS) if intervals is None else list(intervals)
-    if not intervals or any(i not in PERIODS for i in intervals): raise ValueError('Invalid export intervals')
-    placeholders=','.join('?' for _ in intervals)
-    with store.lock:
-        # Each requested period is read after its close has been processed.
-        store.db.execute('BEGIN')
-        try:
-            uni=store.universe()
-            states={(r['symbol'],r['interval']):json.loads(r['state']) for r in store.db.execute(
-                f'SELECT * FROM states WHERE interval IN ({placeholders})',intervals)}
-            signals=collections.defaultdict(list)
-            for r in store.db.execute(f'''SELECT s.payload,o.status,o.sent,o.attempts FROM signals s
-                    LEFT JOIN outbox o ON o.id=s.id WHERE s.interval IN ({placeholders}) ORDER BY s.t,s.symbol''',intervals):
-                p=json.loads(r['payload']);p['notification_status']=r['status'] or 'NOT_REQUESTED'
-                p['sent']=r['sent'];p['attempts']=r['attempts'] or 0
-                signals[p['interval']].append(p)
-            errors=[dict(r) for r in store.db.execute('SELECT * FROM anomalies ORDER BY time,id')]
-            versions=[dict(r) for r in store.db.execute('SELECT * FROM versions ORDER BY created')]
-            exclusions=[dict(r) for r in store.db.execute('SELECT symbol,reason,updated AS time FROM universe WHERE active=0 ORDER BY symbol')]
-            archive_states={i:store.get_meta('excel_archive_'+i) for i in intervals}
-        finally: store.db.rollback()
-    stamp=now_ms();books=[]
-    for interval in intervals:
-        overview=[];status=[]
-        boundary=refresh_boundary if refresh_boundary is not None else stamp//PERIODS[interval]*PERIODS[interval]
-        missing=[]
-        for symbol,info in uni.items():
-            s=states.get((symbol,interval),{})
-            p=s.get('latest')
-            row=flatten(p) if p else dict(symbol=symbol,interval=interval,contract_type=info.get('contractType'),
-                                          readiness='NOT_READY',trigger=False,comparison_window=WINDOW)
-            row.update(health=s.get('health','INITIALIZING'),warmup=s.get('count',0),
-                       detail=s.get('detail',''),updated=s.get('updated'),price_precision=info.get('pricePrecision',8))
-            row['stale']=((s.get('last') if s.get('last') is not None else -1)<boundary-PERIODS[interval] or
-                          not p or p['bar']['t']<boundary-PERIODS[interval])
-            if row['stale'] or s.get('health')!='OK': missing.append(symbol)
-            overview.append(row)
-            status.append(dict(time=s.get('updated'),symbol=symbol,interval=interval,code=s.get('readiness','NOT_READY'),
-                               detail=f"health={s.get('health','INITIALIZING')}; warmup={s.get('count',0)}; {s.get('detail','')}"))
-        status += [e for e in errors if e['interval'] in ('',interval)]
-        status += [dict(e,interval=interval,code='EXCLUDED') for e in exclusions]
-        if refresh_reason=='CANDLE_CLOSE' and missing:
-            status += [dict(time=stamp,symbol=symbol,interval=interval,code='CLOSE_NOT_PROCESSED',
-                detail=f'本次收盘边界UTC毫秒={boundary}；收盘数据尚未完整处理；本行旧数据不能作为该次收盘的判断结果') for symbol in missing]
-        current_start,current_end=report_period(interval,stamp)
-        archive_state=archive_states[interval] or {}
-        first_start=archive_state.get('first_start',current_start)
-        groups=collections.defaultdict(list)
-        groups[current_start]=[]
-        old_start=archive_state.get('current_start',current_start)
-        if old_start<current_start: groups[old_start]=[]
-        for signal in signals[interval]:
-            start,_=report_period(interval,report_timestamp(signal))
-            if first_start<=start<=current_start: groups[start].append(signal)
-        chunks=[]
-        for start in [current_start]+sorted(s for s in groups if s!=current_start):
-            _,end=report_period(interval,start)
-            archived=start!=current_start
-            signature=fingerprint(groups[start])
-            saved=archive_state.get('archived',{}).get(str(start),{})
-            if (archived and start==old_start and archive_state.get('current_signature')==signature
-                    and archive_state.get('files') and all(Path(p).is_file() for p in archive_state['files'])):
-                # Preserve the completed previous workbook exactly when no late record/status changed.
-                continue
-            if archived and saved.get('signature')==signature and saved.get('files') and all(Path(p).is_file() for p in saved['files']):
-                continue
-            parts=split_rows(groups[start],config['excel_max_data_rows'])
-            for number,rows in enumerate(parts,1):
-                suffix=('_'+period_label(start,end)) if archived else ''
-                if len(parts)>1 and number<len(parts): suffix+=f'_卷{number:03}'
-                chunks.append((suffix,rows,start,end,archived,signature))
-        status_chunks=[status[x:x+config['excel_max_data_rows']] for x in range(0,len(status),config['excel_max_data_rows'])] or [[]]
-        rules=rules_for_interval(config,interval)
-        for suffix,group,report_start,report_end,archived,signature in chunks:
-            trigger=[];previous=[]
-            for p in group:
-                r=flatten(p);r.update(notification_status=p['notification_status'],sent=p['sent'],attempts=p['attempts'],
-                                      sending_latency_ms=p['sent']-(p['bar']['T']+1) if p['sent'] else None)
-                trigger.append(r);previous.extend(previous_rows(p))
-            parameters=[{'key':'策略版本','value':store.version},{'key':'数据来源','value':SOURCE},
-                        {'key':'生成时间UTC毫秒','value':stamp},
-                        {'key':'刷新原因','value':refresh_reason},
-                        {'key':'本次对应收盘UTC毫秒','value':boundary},
-                        {'key':'本次收盘覆盖','value':f'已处理{len(uni)-len(missing)}/{len(uni)}；缺数/异常{len(missing)}'},
-                        {'key':'自动刷新规则','value':'启动时各周期一次；之后仅本周期收盘判断后刷新一次。收盘后最多等待30秒汇齐，缺数明确标记；文件写入另需时间。'},
-                        {'key':'触发时间口径','value':'触发发现时间=程序判断并发现信号的时间；触发K线收盘时间=API收盘UTC毫秒+1；两者不等同，均以北京时间显示。'},
-                        {'key':'时间口径','value':'北京时间显示；UTC毫秒保留；API收盘时间=周期结束边界−1ms；日线北京08:00结束'},
-                        {'key':'EMA公式','value':'alpha=2/(N+1); EMA=alpha*C+(1-alpha)*上次EMA；首根收盘价种子；仅12/50/200'},
-                        {'key':'比较窗口','value':'当前策略为此前15根已收盘K线，不含目标K线；15分钟/1小时/4小时/日线各自独立。旧策略记录仍为20根，以各行“比较窗口根数”为准；排名包含目标K线，相同值并列。'},
-                        {'key':'监控范围','value':'仅USDT保证金、USDT报价且正在交易的永续合约；旧策略交割合约历史记录保留，不再新增监控。'},
-                        {'key':'EMA触发条件','value':'当前策略仅要求收盘价高于EMA12、EMA50和EMA200；不要求多头排列或EMA12上升。“EMA多头排列”仅展示客观状态。'},
-                        {'key':'放量与红字','value':f'当前{LABELS[interval]}放量条件：V>={rules["volume_multiple"]:g}×V15_mean 且 V>V15_max；V>={rules["volume_highlight_multiple"]:g}×V15_mean 且 V>V15_max整行红字。旧记录保留其原策略判定和标红口径；旧20根统计不按15根口径标红。'},
-                        {'key':'字段单位','value':'价格USDT；v基础币数量；q USDT成交额；收益率为小数；延迟毫秒；量比/实体比为倍数'},
-                        {'key':'计算口径','value':'统计由版本化监控引擎计算并持久化，Excel为只读快照；修改Excel不会改变监控参数'},
-                        {'key':'实体公式','value':'abs_body=abs(C-O); relative_body=abs(C/O-1); bar_return=C/O-1; close_return=C/前收盘-1'},
-                        {'key':'量价比较','value':'volume_ratio=V/比较均量; relative_body_ratio=relative_body/比较相对实体均值；比较窗口根数随原策略保留，不重算历史记录。'},
-                        {'key':'形态与突破','value':'当前分母=abs(C-O)+H-max(O,C)，不含下影线；body_share=abs(C-O)/分母>=60%，upper_wick_share=(H-max(O,C))/分母<=30%；breakout=C/比较最高价-1；零分母为空且不触发。'},
-                        {'key':'旧策略记录','value':'旧20根记录的实体/上影占比仍以H-L为分母，EMA要求原多头排列及EMA12上升，放量阈值为原配置；原信号与统计不重算，详见策略版本及阈值。'},
-                        {'key':'提醒区别','value':'HISTORICAL初始化；RECOVERED补数；REALTIME实时；EXPIRED发现超过120秒。NOT_REQUESTED未要求发送'},
-                        {'key':'历史配置','value':dumps({'historical_analysis':config['historical_analysis'],'historical_summary':config['historical_summary']})},
-                        {'key':'记录归属期 北京','value':period_label(report_start,report_end)+'；含起始，不含结束'},
-                        {'key':'归属时间口径','value':'按触发发现时间discovered分期，08:00及以后发现的提醒进入新期；K线开收盘时间与事件类型保持原值。'},
-                        {'key':'归档说明','value':f'全部记录保留数据库；本文件{len(group)}条信号；15分钟每日、1小时每周一、4小时以2026-10-19为起点每两周周一、日线每月1日，均北京时间08:00换期；历史文件在{ARCHIVE_DIR}；容量上限{config["excel_max_data_rows"]}行，超限按期内分卷。'},
-                        {'key':'注意','value':'仅监控条件触发，不代表实际交易或盈利预测；快照中的stale反映已收盘K线缺口。'},
-                        {'key':'配置','value':dumps(config)}]
-            parameters += [{'key':f'历史策略 {v["version"]}', 'value':v['config']} for v in versions]
-            books.append(dict(filename=f'币安USDT合约监控_{LABELS[interval]}{suffix}.xlsx',interval=interval,generated=stamp,
-                              comparison_window=WINDOW,
-                              archive=archived,report_period_start=report_start,report_period_end=report_end,
-                              period_signature=signature,
-                              refresh_reason=refresh_reason,refresh_boundary=boundary,
-                              coverage=dict(expected=len(uni),completed=len(uni)-len(missing),missing=missing),
-                              overview=[] if archived else overview,triggers=trigger,previous=previous,
-                              status=[] if archived else status_chunks[-1],parameters=parameters))
-        current_parameters=next(b['parameters'] for b in books if b['interval']==interval and not b['archive'])
-        for index,chunk in enumerate(status_chunks[:-1],1):
-            books.append(dict(filename=f'币安USDT合约监控_{LABELS[interval]}_异常归档_卷{index:03}.xlsx',interval=interval,
-                              generated=stamp,comparison_window=WINDOW,refresh_reason=refresh_reason,refresh_boundary=boundary,
-                              archive=False,report_period_start=current_start,report_period_end=current_end,
-                              period_signature=fingerprint(groups[current_start]),
-                              overview=[],triggers=[],previous=[],status=chunk,parameters=current_parameters))
-    return books
+def snapshot(store,config,intervals=None,refresh_reason='MANUAL',refresh_boundary=None,*,stream_dir=None,backfill=False):
+    selected=list(PERIODS) if intervals is None else list(intervals)
+    if not selected or any(i not in PERIODS for i in selected): raise ValueError('Invalid export intervals')
+    from .report_snapshot import indexed_snapshot
+    return indexed_snapshot(store,config,selected,refresh_reason,refresh_boundary,now_ms(),stream_dir,backfill)
 
-def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',refresh_boundary=None):
+
+def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',refresh_boundary=None,*,backfill=False):
+    selected=list(PERIODS) if intervals is None else list(intervals)
+    if not selected or any(i not in PERIODS for i in selected): raise ValueError('Invalid export intervals')
+    options=settings(config);revision=worker_revision(options)
+    queued=time.monotonic()
+    with EXPORT_LOCK:
+        selected=[i for i in selected if not check_circuit(store,i,revision)]
+        if not selected:return []
+        started=time.monotonic()
+        try:
+            return _publish_locked(store,config,render,selected,refresh_reason,refresh_boundary,
+                options=options,revision=revision,backfill=backfill,queue_wait_ms=round((started-queued)*1000))
+        except Exception as exc:
+            if not getattr(exc,'recorded_export_failure',False):
+                record_failure(store,selected,type(exc).__name__,str(exc),
+                    dict(duration_ms=round((time.monotonic()-started)*1000),peak_rss_bytes=0),revision)
+            raise
+
+
+def _publish_locked(store,config,render,intervals,refresh_reason,refresh_boundary,*,options,revision,backfill,queue_wait_ms):
     selected=list(PERIODS) if intervals is None else list(intervals)
     # Independent period workers must never overwrite one another's input/cache.
     cache=Path(config['data_dir'])/'export-cache'
     if intervals is not None: cache=cache/'-'.join(selected)
     cache.mkdir(parents=True,exist_ok=True)
-    books=snapshot(store,config,selected,refresh_reason,refresh_boundary)
-    spec=cache/'snapshot.json';spec.write_text(dumps({'books':books,'render':render}),encoding='utf-8')
-    command=[config['node_executable'],str(Path(__file__).parent.parent/'excel_builder.mjs'),str(spec),str(cache)]
-    result=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',timeout=600)
+    started=time.monotonic()
+    books=snapshot(store,config,selected,refresh_reason,refresh_boundary,stream_dir=cache,backfill=backfill)
+    spec=cache/'snapshot.json';spec.write_text(dumps({'format_version':4,'books':books,'render':render,
+        'format_cache':str(Path(config['data_dir'])/'export-cache/formatted-rows.sqlite3'),
+        'budget':dict(rss_bytes=options['worker_rss_bytes'],block_rows=options['block_rows'],block_bytes=options['block_bytes'])}),encoding='utf-8')
+    command=[config['node_executable'],f'--max-old-space-size={int(options["node_heap_mb"])}',
+        str(Path(__file__).parent.parent/'excel_builder.mjs'),str(spec),str(cache)]
+    result=run_builder(command,cache=cache,options=options)
+    metrics=getattr(result,'metrics',dict(duration_ms=round((time.monotonic()-started)*1000),peak_rss_bytes=0))
     if result.returncode:
-        store.anomaly('','','EXPORT_ERROR',result.stderr[-1500:]);raise RuntimeError('Excel导出失败，详见数据库异常记录')
+        record_failure(store,selected,getattr(result,'reason',None) or 'EXPORT_ERROR',result.stderr,metrics,revision)
+        failure=RuntimeError('Excel导出失败，详见export_health与本地导出告警')
+        failure.recorded_export_failure=True
+        raise failure
     # Build every workbook successfully before moving or replacing any existing file.
     publication={}
     for interval in selected:
@@ -248,6 +168,7 @@ def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',
             current['report_period_start'],current['report_period_end'],current['generated'])
     outputs=[];period_outputs={i:[] for i in selected};period_pending={i:False for i in selected}
     archive_updates={i:{} for i in selected}
+    published={}
     for book in books:
         interval=book['interval'];state=publication[interval]
         temporary=cache/book['filename']
@@ -263,6 +184,7 @@ def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',
         # Move to the target filesystem before replace (data and excel dirs may use different volumes).
         local=target.with_suffix('.pending.xlsx');shutil.copy2(temporary,local)
         actual,locked=safe_replace(local,target)
+        published.setdefault((interval,book['report_period_start']),[]).append(actual)
         if book['archive']:
             update=archive_updates[interval].setdefault(str(book['report_period_start']),
                 dict(signature=book['period_signature'],files=[]))
@@ -281,6 +203,8 @@ def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',
                 files=[p for p in previous.get('files',[]) if Path(p).name.startswith(prefix)]
                 if files: periods[interval]=dict(time=previous.get('time'),files=files,pending_replace=previous.get('pending_replace',False))
         stamp=now_ms()
+        metrics['duration_ms']=round((time.monotonic()-started)*1000)
+        metrics['queue_wait_ms']=queue_wait_ms
         for interval in selected:
             book=next(b for b in books if b['interval']==interval and not b['archive'])
             archive_state=publication[interval]
@@ -289,11 +213,23 @@ def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',
                 files=list(dict.fromkeys(retained+period_outputs[interval])))
             archive_state.setdefault('archived',{}).update(archive_updates[interval])
             store.meta('excel_archive_'+interval,archive_state)
+            runtime=record_success(store,interval,book,metrics,revision,stamp)
             periods[interval]=dict(time=stamp,snapshot_time=book['generated'],files=period_outputs[interval],
                 pending_replace=period_pending[interval],reason=refresh_reason,boundary=book['refresh_boundary'],coverage=book.get('coverage'),
                 report_period_start=book['report_period_start'],report_period_end=book['report_period_end'],
                 archive_directory=str(Path(config['excel_dir'])/ARCHIVE_DIR),
-                pending_archive_moves=len(archive_state.get('pending_moves',[])))
+                pending_archive_moves=len(archive_state.get('pending_moves',[])),
+                complete=book['complete'],last_complete_boundary=runtime.get('last_complete_boundary'),
+                duration_ms=metrics['duration_ms'],peak_rss_bytes=metrics['peak_rss_bytes'],queue_wait_ms=queue_wait_ms)
+        # Record canonical file ownership and only acknowledge the captured DB revision.
+        index=ExportIndex(store.db)
+        for (interval,start),files in published.items():
+            book=next(b for b in books if b['interval']==interval and b['report_period_start']==start)
+            index.mark_exported(interval,start,book['export_revision'],dict(files=files,
+                row_count=book['period_signal_count'],ids_sha256=book['signal_ids_sha256'],
+                snapshot_time=book['generated'],snapshot_revision=book['snapshot_revision'],
+                report_period_start=start,report_period_end=book['report_period_end']),stamp)
+        store.db.commit()
         state=dict(time=stamp,files=[p for i in PERIODS for p in periods.get(i,{}).get('files',[])],
                    pending_replace=any(p['pending_replace'] for p in periods.values()),by_interval=periods)
         manifest=Path(config['excel_dir'])/'导出清单.json'
@@ -302,6 +238,21 @@ def export_all(store,config,render=False,intervals=None,refresh_reason='MANUAL',
             note='各周期独立刷新；by_interval记录收盘边界、归属期、完成时间及当前文件；历史文件按触发发现时间分期；时间戳快照不是新增信号')),encoding='utf-8')
         os.replace(manifest_temp,manifest)
         store.meta('last_export',state)
+    rowcache=RowCache(Path(config['data_dir'])/'export-cache/prepared-rows.sqlite3')
+    try:
+        for interval,start in published:
+            book=next(b for b in books if b['interval']==interval and b['report_period_start']==start)
+            rowcache.successful(interval,start,book['export_revision'],book['period_signal_count'],options['format_version'],stamp)
+    finally:rowcache.close()
+    # Keep only the most recent successfully built NDJSON generation for diagnostics.
+    keep={Path(b['triggers']['ndjson']).parent for b in books if isinstance(b['triggers'],dict)}
+    cache_root=resolved(cache)
+    for old in cache.glob('rows-*'):
+        target=resolved(old)
+        if target.parent!=cache_root:raise ValueError('Unexpected export cache directory')
+        if old.is_dir() and old not in keep:shutil.rmtree(target)
+    from .export_runtime import maintain_history
+    maintain_history(store,config,revision,stamp)
     return outputs
 
 async def pause_or_stop(monitor,seconds):
@@ -318,16 +269,46 @@ async def wait_for_close(monitor,interval,boundary):
 
 async def export_period_loop(monitor,interval):
     boundary=next_boundary(monitor.client.time(),interval)
+    key='pending_export_batches_'+interval
+    pending=set(monitor.store.get_meta(key,[]) if hasattr(monitor.store,'get_meta') else [])
+    last_recovery_check=0;recovery_cursor=0
     async def publish(reason,close=None):
+        checked=close if close is not None else monitor.client.time()//PERIODS[interval]*PERIODS[interval]
+        # Persist before any worker/file mutation so a process kill cannot lose this batch.
+        pending.add(checked)
+        if hasattr(monitor.store,'meta'):await asyncio.to_thread(monitor.store.meta,key,sorted(pending))
         try:
-            await asyncio.to_thread(export_all,monitor.store,monitor.config,intervals=[interval],
+            outputs=await asyncio.to_thread(export_all,monitor.store,monitor.config,intervals=[interval],
                                     refresh_reason=reason,refresh_boundary=close)
+            published=(monitor.store.get_meta('last_export',{}).get('by_interval',{}).get(interval,{})
+                if hasattr(monitor.store,'get_meta') else {})
+            if published and outputs:
+                checked=published['boundary']
+                coverage=published['coverage']
+            else:
+                coverage=await asyncio.to_thread(close_coverage,monitor.store,interval,checked)
+            # Only coverage captured in the published workbook can complete a batch.
+            # A repair arriving during XLSX writing must schedule one more refresh.
+            if coverage['expected'] and not coverage['missing'] and outputs!=[]:pending.discard(checked)
+            else:pending.add(checked)
+            if hasattr(monitor.store,'meta'):await asyncio.to_thread(monitor.store.meta,key,sorted(pending))
         except Exception as exc:
-            monitor.store.anomaly('',interval,'EXPORT_WORKER_ERROR',type(exc).__name__)
+            pending.add(checked)
+            if hasattr(monitor.store,'meta'):await asyncio.to_thread(monitor.store.meta,key,sorted(pending))
+            if not getattr(exc,'recorded_export_failure',False):
+                monitor.store.anomaly('',interval,'EXPORT_WORKER_ERROR',type(exc).__name__)
     await publish('STARTUP')
     while not monitor.stop.is_set():
         remaining=(boundary-monitor.client.time())/1000
         if remaining>0:
+            if pending and monitor.client.time()-last_recovery_check>=settings(monitor.config)['recovery_poll_seconds']*1000:
+                choices=sorted(pending);target=choices[recovery_cursor%len(choices)];recovery_cursor+=1
+                last_recovery_check=monitor.client.time()
+                coverage=await asyncio.to_thread(close_coverage,monitor.store,interval,target)
+                if coverage['expected'] and not coverage['missing']:
+                    # A repaired batch keeps its original close boundary; exact evaluations
+                    # supply that candle even if the current state has advanced.
+                    await publish('RECOVERY_COMPLETE',target)
             await pause_or_stop(monitor,min(remaining,1))
             continue
         # After suspension/very slow export, refresh the current close once.
@@ -343,5 +324,5 @@ async def export_period_loop(monitor,interval):
         boundary+=PERIODS[interval]
 
 async def export_loop(monitor):
-    # Four independent schedules: coincident closes do not wait for other files.
+    # Independent close schedules share one bounded writer to prevent memory overlap.
     await asyncio.gather(*(export_period_loop(monitor,i) for i in PERIODS))

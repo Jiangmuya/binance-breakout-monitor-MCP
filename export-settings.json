@@ -1,0 +1,14 @@
+{
+  "page_rows": 500,
+  "block_rows": 5000,
+  "block_bytes": 52428800,
+  "worker_rss_bytes": 536870912,
+  "node_heap_mb": 256,
+  "timeout_seconds": 180,
+  "recent_anomaly_hours": 24,
+  "recent_anomaly_groups": 2000,
+  "recovery_poll_seconds": 5,
+  "failure_limit": 3,
+  "historical_periods_per_refresh": 8,
+  "format_version": 4
+}

@@ -1,8 +1,9 @@
 {
   "python": "3.12.14",
-  "node": "24.19.0",
-  "artifact_tool": "2.8.94",
-  "artifact_tool_distribution": "Codex bundled private runtime; not included in source archive",
+  "node": "24.22.1",
   "python_dependencies": "requirements.lock",
-  "platform_verified": "Windows x64"
+  "platform_verified": "Windows x64",
+  "xlsx_writer": "streaming OOXML + Archiver 7.0.1",
+  "format_cache": "Node built-in SQLite",
+  "node_dependencies": "package-lock.json"
 }

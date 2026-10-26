@@ -13,3 +13,6 @@ node_modules/
 *.pending.xlsx
 *_snapshot_*.xlsx
 *.zip
+
+# Locally generated reports; previously tracked public samples remain historical.
+/excel/

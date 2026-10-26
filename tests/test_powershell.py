@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ('start-local.ps1', 'setup.ps1')
+SCRIPTS = ('start-local.ps1', 'setup.ps1', 'setup-export.ps1')
 
 class PowerShellCompatibilityTests(unittest.TestCase):
     def test_non_ascii_scripts_have_utf8_bom(self):
@@ -23,7 +23,7 @@ class PowerShellCompatibilityTests(unittest.TestCase):
         executable = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
         command = """
 $result = @()
-foreach ($name in @('start-local.ps1', 'setup.ps1')) {
+foreach ($name in @('start-local.ps1', 'setup.ps1', 'setup-export.ps1')) {
     $tokens = $null
     $parseErrors = $null
     $null = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -38,7 +38,7 @@ foreach ($name in @('start-local.ps1', 'setup.ps1')) {
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
         self.assertTrue(report['version'].startswith('5.1.'))
-        self.assertEqual([row['errors'] for row in report['scripts']], [0, 0])
+        self.assertEqual([row['errors'] for row in report['scripts']], [0, 0, 0])
 
 if __name__ == '__main__':
     unittest.main()

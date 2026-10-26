@@ -1,6 +1,7 @@
 ﻿param(
-    [ValidateSet('init','bootstrap','run','export','status','stop')][string]$Command = 'run',
+    [ValidateSet('init','bootstrap','run','export','status','stop','reset-export')][string]$Command = 'run',
     [int]$Seconds = 0,
+    [switch]$Backfill,
     [string]$PythonPath = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe",
     [string]$NodePath = "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
 )
@@ -19,6 +20,8 @@ try {
         Write-Host '正在启动并恢复历史数据，请保持窗口打开；初始化完成后会显示运行状态。'
         Write-Host '未触发信号时仍会持续监控。控制台状态每60秒显示一次，不影响Excel收盘刷新时间。'
     }
-    & $PythonPath -u -m monitor $Command --config config.json --seconds $Seconds
+    $taskExtraArguments = @()
+    if ($Backfill) { $taskExtraArguments += '--backfill' }
+    & $PythonPath -u -m monitor $Command --config config.json --seconds $Seconds @taskExtraArguments
     if ($LASTEXITCODE -ne 0) { throw "监控命令退出，代码 $LASTEXITCODE。请查看 runtime 中的日志。" }
 } finally { Pop-Location }

@@ -192,7 +192,7 @@ class CoreTests(unittest.TestCase):
     def test_export_interruption_keeps_previous_file(self):
         from types import SimpleNamespace
         target=Path(self.tmp.name)/'币安USDT合约监控_15分钟.xlsx';target.write_bytes(b'old snapshot')
-        with patch('monitor.export.subprocess.run',return_value=SimpleNamespace(returncode=1,stderr='interrupted')):
+        with patch('monitor.export.run_builder',return_value=SimpleNamespace(returncode=1,stderr='interrupted')):
             with self.assertRaisesRegex(RuntimeError,'导出失败'):export_all(self.store,self.config)
         self.assertEqual(target.read_bytes(),b'old snapshot')
 

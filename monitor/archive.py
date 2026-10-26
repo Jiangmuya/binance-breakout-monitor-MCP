@@ -1,6 +1,7 @@
 """Calendar periods and recoverable workbook moves; no market/strategy changes."""
 import datetime as dt
 import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -84,14 +85,40 @@ def archive_target(root, filename):
 
 def _file_hash(path):
     digest = hashlib.sha256()
-    with path.open('rb') as handle:
+    with _io(path).open('rb') as handle:
         for block in iter(lambda: handle.read(1024*1024), b''):
             digest.update(block)
     return digest.hexdigest()
 
 
-def move_pending(root, moves):
-    """Retry only journaled paths; keep distinct existing snapshots on collision."""
+def _io(path):
+    path = Path(path)
+    if os.name != 'nt':
+        return path
+    value = str(path.absolute())
+    if value.startswith('\\\\?\\') or len(value) < 240:
+        return path
+    return Path('\\\\?\\UNC\\' + value[2:] if value.startswith('\\\\') else '\\\\?\\' + value)
+
+
+def _collision_target(target, expected):
+    """Resolve a collision before journaling; never replace different bytes."""
+    if not _io(target).exists() or _file_hash(target) == expected:
+        return target
+    for suffix in (expected[:16], expected):
+        candidate = target.with_name(target.stem+'_快照_'+suffix+target.suffix)
+        if not _io(candidate).exists() or _file_hash(candidate) == expected:
+            return candidate
+    raise FileExistsError('Archive collision targets contain different bytes: '+str(target))
+
+
+def move_pending(root, moves, *, prepared=None, verified=None):
+    """Move journaled files, committing a selected target before its rename.
+
+    ``prepared`` must durably save the mutated journal before filesystem changes.
+    ``verified`` can atomically update canonical metadata after target hash checks.
+    Missing or changed sources are never sufficient proof of a completed move.
+    """
     root = resolved(root)
     pending = []
     for move in moves:
@@ -99,29 +126,80 @@ def move_pending(root, moves):
         target = archive_target(root, Path(move['target']).name)
         if source.parent != root or target != resolved(move['target']):
             raise ValueError('Workbook move escaped its intended directory')
-        if not source.exists():
-            continue
         try:
-            source_hash = _file_hash(source)
-            if move.get('expected_hash') and source_hash != move['expected_hash']:
-                # A completed move followed by a crash can leave a stale journal while
-                # this source name already belongs to the newly published workbook.
-                continue
-            if target.exists() and source_hash != _file_hash(target):
-                target = target.with_name(target.stem+'_快照_'+source_hash[:16]+target.suffix)
-            move['target'] = str(target)
-            os.replace(source, target)
-        except PermissionError:
-            pending.append(dict(move, source=str(source), target=str(target)))
+            expected = move.get('expected_hash')
+            source_hash = _file_hash(source) if _io(source).exists() else None
+            if expected and source_hash != expected:
+                # Supports older journals whose collision destination was not
+                # recorded, and a stale journal whose source name has been reused.
+                candidates = [target, target.with_name(target.stem+'_快照_'+expected[:16]+target.suffix),
+                              target.with_name(target.stem+'_快照_'+expected+target.suffix)]
+                recovered = next((p for p in candidates if _io(p).is_file() and _file_hash(p) == expected), None)
+                if recovered is None:
+                    raise FileNotFoundError('Archive source missing/changed and verified destination unavailable: '+str(source))
+                target = recovered
+                move.update(source=str(source), target=str(target), completed=False)
+                if prepared: prepared(move)
+            else:
+                if source_hash is None:
+                    raise FileNotFoundError('Archive source missing without a verifiable content hash: '+str(source))
+                expected = source_hash
+                target = _collision_target(target, expected)
+                move.update(source=str(source), target=str(target), expected_hash=expected, completed=False)
+                move.pop('error', None)
+                # A crash after replace will now point at this exact destination.
+                if prepared: prepared(move)
+                os.replace(_io(source), _io(target))
+            if not _io(target).is_file() or _file_hash(target) != expected:
+                raise OSError('Moved workbook failed its content verification: '+str(target))
+            move.update(target=str(target), completed=True)
+            move.pop('error', None)
+            if verified: verified(move)
+        except (PermissionError, FileNotFoundError, FileExistsError) as exc:
+            move.update(source=str(source), target=str(target), completed=False, error=str(exc))
+            pending.append(move)
     return pending
+
+
+def _update_move_entry(state, move):
+    period = move.get('period_start')
+    if period is None:
+        return
+    entry = state.setdefault('archived', {}).setdefault(str(period),
+        dict(signature=move.get('period_signature'), files=[], moves=[]))
+    records = {item['source']: item for item in entry.get('moves', [])}
+    records[move['source']] = dict(move)
+    entry['moves'] = list(records.values())
+    entry['files'] = [item['target'] for item in entry['moves']]
+
+
+def _save_publication(store, key, state, interval, completed=None):
+    """One transaction updates state and only existing canonical membership."""
+    with store.lock, store.db:
+        if completed and completed.get('period_start') is not None:
+            table = store.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='signals_export_metadata'").fetchone()
+            if table:
+                row = store.db.execute('SELECT manifest FROM signals_export_metadata WHERE interval=? AND start=?',
+                    (interval, completed['period_start'])).fetchone()
+                if row:
+                    manifest = json.loads(row[0])
+                    source = resolved(completed['source'])
+                    original = manifest.get('files', [])
+                    files = [completed['target'] if resolved(path) == source else path for path in original]
+                    if files != original:
+                        manifest['files'] = files
+                        store.db.execute('UPDATE signals_export_metadata SET manifest=? WHERE interval=? AND start=?',
+                            (json.dumps(manifest, ensure_ascii=False, separators=(',', ':')), interval, completed['period_start']))
+        store.db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)',
+            (key, json.dumps(state, ensure_ascii=False, separators=(',', ':'))))
 
 
 def begin_publication(store, config, interval, label, start, end, stamp):
     """Journal old-file moves before publishing a new reporting period."""
     root = resolved(config['excel_dir'])
-    root.mkdir(parents=True, exist_ok=True)
+    _io(root).mkdir(parents=True, exist_ok=True)
     directory = archive_target(root, 'placeholder.xlsx').parent
-    directory.mkdir(exist_ok=True)
+    _io(directory).mkdir(exist_ok=True)
     key = 'excel_archive_'+interval
     with store.lock:
         state = store.get_meta(key)
@@ -130,7 +208,7 @@ def begin_publication(store, config, interval, label, start, end, stamp):
         if state is None:
             state = dict(first_start=start, current_start=start, files=[], archived={}, pending_moves=[])
             migration = dt.datetime.fromtimestamp(stamp/1000, ZONE).strftime('%Y%m%d_%H%M%S')
-            for source in sorted(root.glob(prefix+'*.xlsx')):
+            for source in sorted(_io(root).glob(prefix+'*.xlsx')):
                 if source.name.endswith('.pending.xlsx'):
                     continue
                 target = archive_target(root, source.stem+'_旧版累计_'+migration+'.xlsx')
@@ -146,26 +224,39 @@ def begin_publication(store, config, interval, label, start, end, stamp):
                     base = source.stem
                     filename = (prefix+'_'+suffix+'.xlsx' if base == prefix
                                 else prefix+'_'+suffix+'_'+base[len(prefix):].lstrip('_')+'.xlsx')
-                    moves.append(dict(source=str(source), target=str(archive_target(root, filename))))
+                    moves.append(dict(source=str(source), target=str(archive_target(root, filename)),
+                        period_start=old_start, period_signature=closing[1]))
         combined = {m['source']: m for m in state.get('pending_moves', [])}
         for move in moves:
-            source = Path(move['source'])
-            if source.exists():
-                move['expected_hash'] = _file_hash(source)
-        combined.update({m['source']: m for m in moves})
-        # Durable journal: a crash after a move cannot lose its intended destination.
+            if move['source'] in combined:
+                # A restart must not erase an earlier journal's actual collision
+                # target or content hash just because the source has disappeared.
+                existing = combined[move['source']]
+                for name in ('period_start', 'period_signature'):
+                    if name in move: existing.setdefault(name, move[name])
+                continue
+            try:
+                if _io(move['source']).exists():
+                    move['expected_hash'] = _file_hash(Path(move['source']))
+            except PermissionError:
+                pass
+            combined[move['source']] = move
         state['pending_moves'] = list(combined.values())
-        store.meta(key, state)
-    pending = move_pending(root, state['pending_moves'])
-    if closing and closing[1] is not None and moves:
-        state.setdefault('archived', {})[str(closing[0])] = dict(
-            signature=closing[1], files=[m['target'] for m in moves])
+        for move in state['pending_moves']:
+            _update_move_entry(state, move)
+        _save_publication(store, key, state, interval)
+    def prepared(move):
+        _update_move_entry(state, move)
+        _save_publication(store, key, state, interval)
+    def verified(move):
+        _update_move_entry(state, move)
+        _save_publication(store, key, state, interval, completed=move)
+    pending = move_pending(root, state['pending_moves'], prepared=prepared, verified=verified)
     state['pending_moves'] = pending
     if state['current_start'] != start:
         state['files'] = []
     # Commit the new path ownership before any current workbook uses the base name.
     # This prevents a restart after publication from archiving a new file as the old period.
     state['current_start'] = start
-    with store.lock:
-        store.meta(key, state)
+    _save_publication(store, key, state, interval)
     return state
