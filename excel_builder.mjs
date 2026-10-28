@@ -29,10 +29,10 @@ const schemas={
   ...checks,c('trigger','整体触发','bool'),c('readiness','预热状态','text',24),c('warmup','已积累K线','integer'),
   c('health','数据状态','text',22),c('stale','快照存在缺口','bool',20),c('updated','最后更新 北京','date',29),
   c('seed','EMA种子UTC毫秒','integer',22),c('t','开盘UTC毫秒','integer',22),c('T','API收盘UTC毫秒','integer',22),
-  c('comparison_window','比较窗口根数','integer',20),c('strategy_version','策略版本','text',27),c('detail','状态说明','text',55)],
+  c('comparison_window','比较窗口根数','integer',20),c('strategy_version','策略版本','text',27),c('detail','状态说明','text',55),c('trigger_basis','触发依据','text',28)],
  triggers:[...identity,c('interval','周期','text'),...triggerDates,
   ...prices,c('v','基础币成交量'),c('q','USDT成交额'),...emas,...comparisons,...checks,
-  c('event_type','事件类型','text',20),c('origin','数据来源阶段','text',20),c('readiness','预热状态','text',24),
+  c('trigger_basis','触发依据','text',28),c('event_type','事件类型','text',20),c('origin','数据来源阶段','text',20),c('readiness','预热状态','text',24),
   c('seed','EMA种子UTC毫秒','integer',22),c('warmup','累计K线数','integer'),c('discovered','触发发现时间 北京','date',29),
   c('discovered','发现UTC毫秒','integer',22),c('received','接收UTC毫秒','integer',22),c('processed','处理UTC毫秒','integer',22),c('event_time','交易所事件UTC毫秒','integer',24),
   c('notification_status','通知状态','text',24),c('sent','发送时间 北京','date',29),c('sent','发送UTC毫秒','integer',22),
@@ -51,6 +51,9 @@ const clean=v=>typeof v==='string'&&/^[=+@]/.test(v)?"'"+v:v;
 // Keep its 20-bar values and labels explicit rather than relabeling them as 15.
 const normalize=(source,book)=>{
  const row={...source};
+ // A missing path belongs to the legacy single-path strategy, not the new special rule.
+ const triggerPath=row.trigger_path??(row.trigger===true||row.signal_id?'STANDARD':'NONE');
+ row.trigger_basis=({STANDARD:'普通条件',SPECIAL:'特别条件',BOTH:'普通条件＋特别条件',NONE:'未触发'})[triggerPath]??'未记录';
  row.count??=row.occurrence_count;
  const window=row.comparison_window??('V15_mean'in row?15:'V20_mean'in row?20:book.comparison_window??20);
  row.comparison_window=window;
@@ -89,7 +92,7 @@ try{
   check();
   const cachePath=path.resolve(spec.format_cache??path.join(out,'formatted-rows.sqlite3'));
   await fs.mkdir(path.dirname(cachePath),{recursive:true});
-  cache=new FormatCache(cachePath,'xlsx-format-v4-20261022a');
+  cache=new FormatCache(cachePath,'xlsx-format-v4-special-blue-20261028a');
   timer=setInterval(()=>{try{sample();}catch(error){sampleError??=error;}},100);
   for(const book of spec.books){
     check();

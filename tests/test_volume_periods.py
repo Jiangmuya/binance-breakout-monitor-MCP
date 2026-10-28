@@ -101,7 +101,7 @@ class PeriodVolumeTests(unittest.TestCase):
                     payload = state['latest']
                     self.assertEqual(bool(events), interval != '15m')
                     self.assertEqual(payload['metrics']['thresholds'], rules_for_interval(CONFIG, interval))
-                    self.assertTrue(payload['strategy_version'].startswith('v3-'))
+                    self.assertTrue(payload['strategy_version'].startswith('v4-'))
                     self.assertEqual(payload['previous_ema'], prior['ema'])
                     self.assertEqual(state['seed'], prior['seed'])
                     self.assertEqual(state['count'], 201)

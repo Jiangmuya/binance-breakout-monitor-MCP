@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from .core import Store, PERIODS, RULE_KEYS, now_ms, dumps, validate_volume_rules
 from .transport import PublicClient
+from .collection import CollectionWindows
 
 def load_config(path):
     path=Path(path).resolve()
@@ -72,6 +73,7 @@ class Monitor:
         self.failed=0
         self.client=None
         self.console_stage='初始化 / 恢复历史数据'
+        self.collection=CollectionWindows(self)
 
     def repair(self,symbol,interval):
         pair=(symbol,interval)
@@ -169,14 +171,8 @@ class Monitor:
             finally: self.queue.task_done()
 
     async def subscribe(self):
-        for task in self.ws_tasks: task.cancel()
-        await asyncio.gather(*self.ws_tasks,return_exceptions=True)
-        self.client.connections.clear()
-        universe=await asyncio.to_thread(self.store.universe)
-        streams=[f'{s.lower()}@kline_{i}' for s in universe for i in PERIODS]
-        size=self.config['streams_per_connection']
-        self.ws_tasks=[asyncio.create_task(self.client.stream(n//size,streams[n:n+size],self.queue,
-                       self.repair,self.store,self.stop)) for n in range(0,len(streams),size)]
+        # Reconcile only eligible collection windows; never reset overlapping batches.
+        await self.collection.refresh()
 
     async def maintenance(self):
         refreshed=time.monotonic()
@@ -208,7 +204,8 @@ class Monitor:
             report.update(pid=os.getpid(),running=True,market_queue=self.queue.qsize(),repair_queue=self.repairs.qsize(),
                           ws_connections=dict(self.client.connections),rest_weight=self.client.budget.server_used,
                           ws_messages=dict(self.client.messages),
-                          history_batches=self.completed,history_failures=self.failed)
+                          history_batches=self.completed,history_failures=self.failed,
+                          collection=dict(self.collection.report))
             target=Path(self.config['data_dir'])/'health.json'
             temp=target.with_suffix('.tmp');temp.write_text(dumps(report),encoding='utf-8');os.replace(temp,target)
             if time.monotonic()>=next_console:
@@ -238,10 +235,10 @@ class Monitor:
                 if mode=='bootstrap': return
                 from .notifications import dispatch
                 await self.subscribe()
-                self.console_stage='持续监控中'
                 print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 已启动 {len(self.ws_tasks)} 条行情订阅连接；"
-                      "等待已收盘K线。触发条件满足时会输出提醒，Excel按各周期收盘刷新。",flush=True)
+                      "按收盘采集窗口自动启停；窗口外0条连接为正常待机。仅已收盘K线参与提醒，Excel按各周期收盘刷新。",flush=True)
                 tasks=[asyncio.create_task(self.maintenance()),
+                       asyncio.create_task(self.collection.loop()),
                        asyncio.create_task(dispatch(self))]
                 tasks += [asyncio.create_task(self.consume()) for _ in range(8)]
                 tasks += [asyncio.create_task(self.repair_worker()) for _ in range(self.config['rest_concurrency'])]
@@ -249,8 +246,7 @@ class Monitor:
                     try: await asyncio.wait_for(self.stop.wait(),seconds)
                     except asyncio.TimeoutError: self.stop.set()
                 else: await self.stop.wait()
-                for t in self.ws_tasks: t.cancel()
-                await asyncio.gather(*self.ws_tasks,return_exceptions=True)
+                await self.collection.close()
                 self.client.connections={k:'STOPPED' for k in self.client.connections}
                 await asyncio.wait_for(self.queue.join(),30)
                 for t in tasks: t.cancel()
@@ -258,7 +254,9 @@ class Monitor:
                 # Let an in-progress atomic export finish before publishing running=false.
                 await export_task
             finally:
-                self.stop.set();health_task.cancel()
+                self.stop.set()
+                await self.collection.close()
+                health_task.cancel()
                 await asyncio.gather(health_task,return_exceptions=True)
                 if export_task is not None:
                     await export_task
@@ -266,7 +264,8 @@ class Monitor:
                 target=Path(self.config['data_dir'])/'health.json'
                 report=await asyncio.to_thread(health_snapshot,self.store)
                 report.update(running=False,ws_connections=dict(self.client.connections),ws_messages=dict(self.client.messages),
-                              market_queue=self.queue.qsize(),repair_queue=self.repairs.qsize())
+                              market_queue=self.queue.qsize(),repair_queue=self.repairs.qsize(),
+                              collection=dict(self.collection.report))
                 target.write_text(dumps(report),encoding='utf-8')
 
 def health_snapshot(store):

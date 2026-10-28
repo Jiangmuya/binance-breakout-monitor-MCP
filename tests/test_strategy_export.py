@@ -94,6 +94,25 @@ class StrategyExportTests(unittest.TestCase):
         old['metrics'].update(volume_highlight=True,volume_highlight_multiple=4)
         self.assertFalse(flatten(old)['volume_highlight'])
 
+    def test_special_path_is_preserved_without_changing_saved_checks_or_highlight(self):
+        p = payload(volume=1200, maximum=1400, mean=90)
+        p['metrics'].update(trigger=True, standard_trigger=False, special_trigger=True,
+                            trigger_path='SPECIAL', checks=[False]*6,
+                            volume_highlight=False, volume_highlight_multiple=4)
+        original = copy.deepcopy(p)
+        row = flatten(p)
+        self.assertEqual(row['trigger_path'], 'SPECIAL')
+        self.assertTrue(row['special_trigger'])
+        self.assertFalse(row['standard_trigger'])
+        self.assertTrue(row['trigger'])
+        self.assertEqual([row[f'check{i}'] for i in range(1, 7)], [False]*6)
+        self.assertFalse(row['volume_highlight'])
+        self.assertEqual(p, original)
+        legacy = payload(20)
+        original = copy.deepcopy(legacy)
+        self.assertNotIn('trigger_path', flatten(legacy))
+        self.assertEqual(legacy, original)
+
     def test_all_four_intervals_export_their_own_previous_fifteen(self):
         for interval,step in PERIODS.items():
             p=payload(interval=interval)

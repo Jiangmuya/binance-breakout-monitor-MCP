@@ -54,9 +54,9 @@ class RuleV2Tests(unittest.TestCase):
 
     def test_default_thresholds_and_new_formula_version(self):
         self.assertEqual(DEFAULT_RULES, dict(volume_multiple=2.5, body_multiple=2.,
-                                            min_body_share=.6, max_upper_wick_share=.3))
+                                            min_body_share=.59, max_upper_wick_share=.41))
         self.assertEqual(CONFIG['volume_multiple'], 2.5)
-        self.assertTrue(version(CONFIG).startswith('v3-'))
+        self.assertTrue(version(CONFIG).startswith('v4-'))
 
     def test_nonbullish_ema_and_falling_ema12_still_trigger(self):
         result = self.calculate()
@@ -84,11 +84,11 @@ class RuleV2Tests(unittest.TestCase):
 
     def test_shape_thresholds_remain_inclusive(self):
         boundary = dict(self.bar, c=107., h=110., l=1.)
-        result = self.calculate(bar=boundary)
+        result = self.calculate(bar=boundary, rules=dict(DEFAULT_RULES, max_upper_wick_share=.3))
         self.assertEqual(result['body_share'], .7)
         self.assertEqual(result['upper_wick_share'], .3)
         self.assertTrue(result['checks'][5])
-        self.assertFalse(self.calculate(bar=dict(boundary, h=110.000001))['checks'][5])
+        self.assertFalse(self.calculate(bar=dict(boundary, h=110.000001), rules=dict(DEFAULT_RULES, max_upper_wick_share=.3))['checks'][5])
         self.assertFalse(self.calculate(bar=boundary,
                                        rules=dict(DEFAULT_RULES, min_body_share=.700001))['checks'][5])
         self.assertFalse(self.calculate(bar=boundary,

@@ -100,9 +100,9 @@ class CoreTests(unittest.TestCase):
 
     def test_shape_boundary(self):
         w=[parse_bar(r,'1h',now_ms()) for r in bars(15)]
-        b=dict(t=0,T=0,o=100.,c=107.,h=110.,l=80.,v=1000.,q=100.)
+        b=dict(t=0,T=0,o=100.,c=159.,h=200.,l=80.,v=1000.,q=100.)
         m=metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)
-        self.assertEqual(m['body_share'],.7);self.assertEqual(m['upper_wick_share'],.3)
+        self.assertEqual(m['body_share'],.59);self.assertEqual(m['upper_wick_share'],.41)
         self.assertTrue(m['checks'][5]);b['h']+=.0001
         self.assertFalse(metrics(b,w,[102,101,100],[101,100,99],DEFAULT_RULES)['checks'][5])
 

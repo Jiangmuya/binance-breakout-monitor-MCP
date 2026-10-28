@@ -40,15 +40,17 @@ addStyle(0,0,0,'General',false);
 const titleStyle=addStyle(3,0,0,'General',false),headerStyle=addStyle(2,1,1,'General',true);
 const dateStyle=addStyle(0,0,0,'yyyy-mm-dd hh:mm:ss',false);
 for(const format of uniqueFormats)for(const font of [0,1])for(const fill of [0,2])for(const wrap of [false,true])addStyle(font,fill,1,format,wrap);
+// Append blue styles so the original normal/red style indices stay stable.
+for(const format of uniqueFormats)for(const fill of [0,2])for(const wrap of [false,true])addStyle(4,fill,1,format,wrap);
 const formatFor=type=>({date:'yyyy-mm-dd hh:mm:ss',price:'0.00000000',rate:'0.00%',integer:'0',number:'#,##0.0000'}[type]??'General');
 function styleXml(){
   const numfmts=uniqueFormats.filter(f=>f!=='General').map(f=>`<numFmt numFmtId="${formatIds.get(f)}" formatCode="${xml(f)}"/>`).join('');
-  const fonts=[['FF22334A',10,false],['FFFF0000',10,false],['FFFFFFFF',10,true],['FF15344F',17,true]].map(([color,size,bold])=>`<font><sz val="${size}"/><color rgb="${color}"/><name val="Microsoft YaHei"/>${bold?'<b/>':''}</font>`).join('');
+  const fonts=[['FF22334A',10,false],['FFFF0000',10,false],['FFFFFFFF',10,true],['FF15344F',17,true],['FF0000FF',10,false]].map(([color,size,bold])=>`<font><sz val="${size}"/><color rgb="${color}"/><name val="Microsoft YaHei"/>${bold?'<b/>':''}</font>`).join('');
   // OOXML requires the first two fills to be none and gray125. Style fills below
   // use logical ids 0/1/2 mapped to physical 0/2/3.
   const xfs=styles.map(s=>`<xf numFmtId="${formatIds.get(s.format)}" fontId="${s.font}" fillId="${s.fill? s.fill+1:0}" borderId="${s.border}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment vertical="center"${s.wrap?' wrapText="1"':''}/></xf>`).join('');
   const border='<border>'+['left','right','top','bottom'].map(edge=>`<${edge} style="thin"><color rgb="FFB7C5D3"/></${edge}>`).join('')+'<diagonal/></border>';
-  return XML_DECL+`<styleSheet xmlns="${NS}"><numFmts count="${uniqueFormats.length-1}">${numfmts}</numFmts><fonts count="4">${fonts}</fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF15344F"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF1D6"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border/><${''}!-- data borders -->${border}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/></styleSheet>`;
+  return XML_DECL+`<styleSheet xmlns="${NS}"><numFmts count="${uniqueFormats.length-1}">${numfmts}</numFmts><fonts count="5">${fonts}</fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF15344F"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF1D6"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border/><${''}!-- data borders -->${border}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${styles.length}">${xfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles><dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/></styleSheet>`;
 }
 function cell(address,value,style=0){
   const start=`<c r="${address}" s="${style}"`;
@@ -76,13 +78,17 @@ export class FormatCache{
   prepare(source,key,book,columns,normalize){
     const hash=sha(this.version+'\0'+key+'\0'+String(book.comparison_window??20)+'\0'+JSON.stringify(source));
     const cached=this.get.get(hash);if(cached){this.hits++;return cached;}
-    this.misses++;const row=normalize(source,book);const red=['overview','triggers'].includes(key)&&row.volume_highlight;
+    this.misses++;const row=normalize(source,book);const signalSheet=['overview','triggers'].includes(key);
+    // Use the persisted trigger route; never infer special signals from old ratios.
+    const blue=signalSheet&&(row.trigger_path==='SPECIAL'||row.trigger_path==='BOTH'||
+      (row.trigger_path==null&&row.special_trigger===true));
+    const red=signalSheet&&row.volume_highlight;
     let body='';
     for(let i=0;i<columns.length;i++){
       const c=columns[i];let format=formatFor(c.type);
       if(key==='overview'&&i>=3&&i<=6)format='0.'+'0'.repeat(Math.max(2,Math.min(12,row.price_precision??8)));
       const warning=key==='overview'&&i===18&&(row.health!=='OK'||row.readiness==='NOT_READY');
-      const style=styleIds.get([red?1:0,warning?2:0,1,format,c.type==='text'].join('|'));
+      const style=styleIds.get([blue?4:red?1:0,warning?2:0,1,format,c.type==='text'].join('|'));
       const value=row[c.key]??null;body+=cell(`${col(i)}0`,c.type==='date'?serial(value):clean(value),style);
     }
     const height=key==='parameters'?Math.max(42,Math.ceil(String(row.value).length/90)*19):['status','recent_anomalies'].includes(key)?40:23;

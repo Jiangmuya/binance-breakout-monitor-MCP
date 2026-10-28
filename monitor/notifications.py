@@ -13,6 +13,12 @@ def beijing(ms):
 def alert(payload):
     b=payload['bar'];m=payload['metrics']
     window=payload.get('comparison_window',15 if 'V15_mean' in m else 20)
+    trigger_path=m.get('trigger_path','STANDARD')
+    basis={'STANDARD':'普通条件','SPECIAL':'特别条件','BOTH':'普通条件＋特别条件','NONE':'未触发'}.get(trigger_path,'未记录')
+    ema_rule='收盘价 > EMA12、EMA50、EMA200' if window==15 else '收盘价 > EMA12 > EMA50 > EMA200，且EMA12上升'
+    ema_status='满足' if m['checks'][1] else '未满足'
+    ema_description=ema_rule+'：'+ema_status
+    if trigger_path=='SPECIAL': ema_description+='（特别条件不要求）'
     message=dict(type='监控条件触发，不代表实际交易',signal_id=payload['signal_id'],
                 strategy_version=payload['strategy_version'],symbol=payload['symbol'],
                 contract_type=payload['contract_type'],interval=payload['interval'],
@@ -21,8 +27,7 @@ def alert(payload):
                 discovered_utc_ms=payload['discovered'],event_type=payload['event_type'],
                 origin=payload['origin'],close=b['c'],EMA12=payload['ema'][0],
                 EMA50=payload['ema'][1],EMA200=payload['ema'][2],
-                EMA条件=('收盘价 > EMA12、EMA50、EMA200：满足' if window==15 else
-                         '收盘价 > EMA12 > EMA50 > EMA200，且EMA12上升：满足'),
+                EMA条件=ema_description,trigger_path=trigger_path,触发依据=basis,
                 comparison_window=window,base_volume=b['v'],quote_volume_usdt=b['q'],
                 volume_ratio=m['volume_ratio'],
                 body=m['body'],relative_body_ratio=m['relative_body_ratio'],bar_return=m['bar_return'],

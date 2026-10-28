@@ -102,31 +102,61 @@ class PublicClient:
         rows=await self.get('/fapi/v1/klines',params,10 if limit==1500 else 2)
         return rows
 
-    async def stream(self,index,streams,queue,repair,store,stop):
+    async def stream(self,index,streams,queue,repair,store,stop,*,active_streams=None,target_close=None):
         attempt=0
         while not stop.is_set():
             try:
+                wanted=set(streams) if active_streams is None else set(streams)&active_streams()
+                if not wanted:
+                    self.connections[index]='STOPPED'
+                    return
                 self.connections[index]='CONNECTING'
                 async with self.session.ws_connect(WS_BASE,proxy=urllib.request.getproxies().get('https'),autoping=True,timeout=aiohttp.ClientWSTimeout(ws_close=10)) as ws:
-                    await ws.send_json({'method':'SUBSCRIBE','params':streams,'id':str(index)})
+                    await ws.send_json({'method':'SUBSCRIBE','params':sorted(wanted),'id':str(index)})
                     self.connections[index]='CONNECTED'
                     connected=time.monotonic()
-                    for stream in streams:
+                    last_received=connected
+                    last_membership_check=connected
+                    subscribed=wanted
+                    for stream in subscribed:
                         symbol,interval=stream.split('@kline_')
                         repair(symbol.upper(),interval)
                     attempt=0
                     while not stop.is_set() and time.monotonic()-connected<23*3600:
-                        message=await asyncio.wait_for(ws.receive(),timeout=240)
+                        if active_streams is not None and time.monotonic()-last_membership_check>=1:
+                            wanted=set(streams)&active_streams()
+                            if not wanted:
+                                self.connections[index]='STOPPED'
+                                return
+                            removed=subscribed-wanted
+                            added=wanted-subscribed
+                            if removed:
+                                await ws.send_json({'method':'UNSUBSCRIBE','params':sorted(removed),'id':str(index)+'u'})
+                            if added:
+                                await ws.send_json({'method':'SUBSCRIBE','params':sorted(added),'id':str(index)+'a'})
+                            subscribed=wanted
+                            last_membership_check=time.monotonic()
+                        try:
+                            message=await asyncio.wait_for(ws.receive(),timeout=1 if active_streams is not None else 240)
+                        except asyncio.TimeoutError:
+                            if active_streams is not None and time.monotonic()-last_received<240:
+                                continue
+                            raise
+                        last_received=time.monotonic()
                         if message.type==aiohttp.WSMsgType.TEXT:
                             data=json.loads(message.data)
                             data=data.get('data',data)
                             if 'code' in data: raise RuntimeError(f'WS_SUBSCRIPTION_{data["code"]}')
                             if data.get('e')!='kline': continue
                             k=data['k']
+                            if active_streams is not None and f"{k['s'].lower()}@kline_{k['i']}" not in active_streams():
+                                continue
                             self.connections[index]='RECEIVING'
                             self.messages['last_event_ms']=data.get('E')
                             if not k['x']:
                                 self.messages['open_ignored']+=1
+                                continue
+                            if target_close is not None and int(k['T'])+1!=target_close:
                                 continue
                             self.messages['closed_received']+=1
                             item=(k['s'],k['i'],[k['t'],k['o'],k['h'],k['l'],k['c'],k['v'],k['T'],k['q']],
@@ -141,7 +171,8 @@ class PublicClient:
             except Exception as exc:
                 self.connections[index]='RECONNECTING'
                 await asyncio.to_thread(store.anomaly,'','','WS_RECONNECT',type(exc).__name__)
-                for stream in streams:
+                retry_streams=set(streams) if active_streams is None else set(streams)&active_streams()
+                for stream in retry_streams:
                     symbol,interval=stream.split('@kline_')
                     repair(symbol.upper(),interval)
                 attempt+=1

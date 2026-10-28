@@ -14,7 +14,8 @@ HIGHLIGHT_VOLUME_MULTIPLE = 4.
 DEFAULT_VOLUME_MULTIPLES = {'15m': 4., '1h': 2.5, '4h': 2.5, '1d': 2.5}
 DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES = {'15m': 5., '1h': 4., '4h': 4., '1d': 4.}
 RULE_KEYS = ('volume_multiple', 'body_multiple', 'min_body_share', 'max_upper_wick_share')
-DEFAULT_RULES = dict(zip(RULE_KEYS, (2.5, 2., .6, .3)))
+DEFAULT_RULES = dict(zip(RULE_KEYS, (2.5, 2., .59, .41)))
+SPECIAL_RULES = {'special_volume_multiple': 12., 'special_body_multiple': 6.}
 
 def validate_volume_rules(config):
     """Reject incomplete or nonfinite period policies before any market processing."""
@@ -30,11 +31,16 @@ def validate_volume_rules(config):
     highlight = config.get('volume_highlight_multiple_by_interval', DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES)
     if any(highlight[interval] < trigger[interval] for interval in PERIODS):
         raise ValueError('volume highlight multiple must be at least the trigger multiple')
+    for key, default in SPECIAL_RULES.items():
+        value = config.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f'{key}: multiple must be finite and positive')
 
 def rules_for_interval(config, interval):
     if interval not in PERIODS:
         raise ValueError('Invalid strategy interval')
     return {**{k: config.get(k, DEFAULT_RULES[k]) for k in RULE_KEYS},
+            **{k: config.get(k, default) for k, default in SPECIAL_RULES.items()},
             'volume_multiple': config.get('volume_multiple_by_interval', DEFAULT_VOLUME_MULTIPLES)[interval],
             'volume_highlight_multiple': config.get('volume_highlight_multiple_by_interval',
                                                     DEFAULT_HIGHLIGHT_VOLUME_MULTIPLES)[interval]}
@@ -68,8 +74,12 @@ def dumps(obj):
 
 def version(config):
     policy = dict(config)
-    policy.update(formula_version=3, periods=PERIODS, seed='first_close', min_bars=200, window=WINDOW)
-    return 'v3-' + hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:16]
+    policy.update(formula_version=4, periods=PERIODS, seed='first_close', min_bars=200,
+                  special_min_bars=WINDOW+1, window=WINDOW)
+    return 'v4-' + hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest()[:16]
+
+def trigger_path(standard, special):
+    return 'BOTH' if standard and special else 'SPECIAL' if special else 'STANDARD' if standard else 'NONE'
 
 def eligible(row):
     return all(row.get(k) == v for k, v in [('quoteAsset', 'USDT'), ('marginAsset', 'USDT'),
@@ -94,7 +104,8 @@ def parse_bar(raw, interval, closed_at):
 def metrics(b, window, ema, prev_ema, rules):
     if len(window) != WINDOW:
         return {'available': False, 'reason': 'WINDOW_NOT_READY', 'checks': [False]*6,
-                'trigger': False, 'comparison_window': WINDOW, 'volume_highlight': False}
+                'trigger': False, 'standard_trigger': False, 'special_trigger': False, 'trigger_path': 'NONE',
+                'comparison_window': WINDOW, 'volume_highlight': False}
     vs = [x['v'] for x in window]
     abs_bodies = [abs(x['c']-x['o']) for x in window]
     returns = [x['c']/x['o']-1 for x in window]
@@ -139,9 +150,15 @@ def metrics(b, window, ema, prev_ema, rules):
                    m['relative_body']>=rules['body_multiple']*m['B15_mean'],
                    m['bar_return']>m['G15_max'],
                    m['available'] and m['body_share']>=rules['min_body_share'] and m['upper_wick_share']<=rules['max_upper_wick_share']]
-    m['trigger'] = m['available'] and all(m['checks'])
+    m['standard_trigger'] = bool(m['available'] and all(m['checks']))
+    # The special route only needs a complete comparison window and defined ratios.
+    m['special_trigger'] = bool(m['volume_ratio'] is not None and m['relative_body_ratio'] is not None
+        and b['v'] >= rules.get('special_volume_multiple', SPECIAL_RULES['special_volume_multiple'])*m['V15_mean']
+        and m['relative_body'] >= rules.get('special_body_multiple', SPECIAL_RULES['special_body_multiple'])*m['B15_mean'])
+    m['trigger'] = m['standard_trigger'] or m['special_trigger']
+    m['trigger_path'] = trigger_path(m['standard_trigger'], m['special_trigger'])
     m['reason'] = '' if m['available'] else 'ZERO_DENOMINATOR'
-    m['thresholds'] = dict(rules)
+    m['thresholds'] = {**SPECIAL_RULES, **rules}
     return m
 
 SCHEMA = '''
@@ -292,7 +309,10 @@ class Store:
                 assess=origin!='HISTORICAL' or self.config.get('historical_analysis') or index==len(pending)-1
                 m=metrics(b,s['window'][-WINDOW:],ema,prev,self.rules[interval]) if assess else None
                 if m:
-                    m['trigger']=bool(m['trigger'] and count>=200 and active)
+                    m['standard_trigger']=bool(m['standard_trigger'] and count>=200 and active)
+                    m['special_trigger']=bool(m['special_trigger'] and active)
+                    m['trigger']=m['standard_trigger'] or m['special_trigger']
+                    m['trigger_path']=trigger_path(m['standard_trigger'],m['special_trigger'])
                     payload=dict(symbol=symbol,contract_type=json.loads(active[0]).get('contractType','') if active else '',
                                  interval=interval,bar=b,ema=ema,previous_ema=prev,metrics=m,readiness=ready,
                                  comparison_window=WINDOW,
